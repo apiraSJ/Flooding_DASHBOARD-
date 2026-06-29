@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RescuOpt AI - Flood Evacuation</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', system-ui, sans-serif; }
+body, html { height: 100%; background: #0F1923; color: #e0e0e0; }
+.container { display: flex; height: 100vh; }
+.sidebar { width: 380px; min-width: 380px; background: #1A2634; display: flex; flex-direction: column; overflow: hidden; border-right: 2px solid #2A3A4A; z-index: 1000; box-shadow: 2px 0 10px rgba(0,0,0,0.5); }
+.sidebar-header { background: linear-gradient(135deg, #1A3A5C, #0F1923); padding: 20px; border-bottom: 2px solid #2196F3; }
+.sidebar-header h1 { font-size: 24px; color: #2196F3; letter-spacing: 1px; }
+.sidebar-header p { font-size: 13px; color: #7A9BB5; margin-top: 5px; }
+.sidebar-body { flex: 1; overflow-y: auto; padding: 15px; }
+.control-group { background: #233342; border-radius: 8px; padding: 15px; margin-bottom: 15px; border-left: 3px solid #2196F3; }
+.control-group h3 { font-size: 14px; color: #E8F0F8; margin-bottom: 10px; text-transform: uppercase; }
+.row { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.row > * { flex: 1; min-width: 0; }
+label { display: block; font-size: 12px; color: #7A9BB5; margin-bottom: 4px; }
+select, input[type="range"], input[type="number"] { width: 100%; padding: 8px; background: #1A2634; border: 1px solid #2A3A4A; color: #fff; border-radius: 4px; font-size: 13px; outline: none; }
+select:focus, input:focus { border-color: #2196F3; }
+.btn { padding: 10px 15px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; transition: all 0.2s; width: 100%; }
+.btn-primary { background: #2196F3; color: #fff; }
+.btn-primary:hover { background: #1565C0; box-shadow: 0 0 10px rgba(33,150,243,0.4); }
+.btn-success { background: #4CAF50; color: #fff; }
+.btn-success:hover { background: #388E3C; }
+.btn-warning { background: #FF9800; color: #fff; }
+.btn-outline { background: transparent; border: 1px solid #7A9BB5; color: #7A9BB5; }
+.btn-outline:hover { border-color: #2196F3; color: #2196F3; }
+.btn-group { display: flex; gap: 8px; margin-top: 10px; }
+.btn-group .btn { flex: 1; padding: 8px; font-size: 12px; }
+#map { flex: 1; height: 100vh; z-index: 1; }
+.mode-indicator { display: inline-block; padding: 5px 12px; border-radius: 12px; font-size: 12px; font-weight: bold; margin-top: 10px; width: 100%; text-align: center; }
+.mode-survivor { background: rgba(76,175,80,0.2); color: #4CAF50; }
+.mode-exit { background: rgba(255,152,0,0.2); color: #FF9800; }
+.mode-none { background: rgba(255,255,255,0.1); color: #7A9BB5; }
+.results-panel { display: none; }
+.results-panel.show { display: block; }
+.result-card { background: #1A2634; border-radius: 8px; padding: 15px; margin-bottom: 10px; border: 1px solid #2A3A4A; }
+.result-card h4 { color: #2196F3; margin-bottom: 8px; font-size: 14px; }
+.stat { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #2A3A4A; font-size: 13px; }
+.stat:last-child { border-bottom: none; }
+.tip-item { padding: 6px 10px; margin: 4px 0; border-radius: 4px; font-size: 12px; background: rgba(33,150,243,0.15); border-left: 3px solid #2196F3; }
+
+/* Custom Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: #0F1923; }
+::-webkit-scrollbar-thumb { background: #2A3A4A; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #2196F3; }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <h1>💧 RESCUOPT AI</h1>
+      <p>Flood Detection & Evacuation System</p>
+    </div>
+    <div class="sidebar-body">
+      
+      <div class="control-group" id="severityPanel" style="border-left-color: #7A9BB5; background: #233342;">
+        <h3 style="color: #E8F0F8; margin-bottom: 5px;">🚨 สถานการณ์ความรุนแรง</h3>
+        <div id="overallSeverity" style="font-size: 16px; font-weight: bold; color: #7A9BB5;">รอข้อมูลวิเคราะห์...</div>
+      </div>
+
+      <div class="control-group">
+        <h3>📍 ตั้งค่าจุดบนแผนที่</h3>
+        <p style="font-size: 12px; color: #7A9BB5; margin-bottom: 10px;">คลิกปุ่มเพื่อเปิดโหมดวางจุด แล้วคลิกบนแผนที่</p>
+        <div class="btn-group">
+          <button class="btn btn-success" onclick="setMode('survivor')">👤 จุดเริ่มต้น</button>
+          <button class="btn btn-warning" onclick="setMode('exit')">🚪 ทางออก</button>
+        </div>
+        <div id="modeIndicator" class="mode-indicator mode-none">คลิกปุ่มเพื่อเลือกโหมด</div>
+      </div>
+
+      <div class="control-group">
+        <h3>⚙️ การค้นหาเส้นทาง</h3>
+        <div class="row">
+          <div>
+            <label>อัลกอริทึม</label>
+            <select id="algorithm">
+              <option value="astar">A* Search (Pathfinding)</option>
+              <option value="hc">Hill Climbing (Optimization)</option>
+              <option value="sa">Simulated Annealing (Optimization)</option>
+              <option value="beam">Local Beam Search (Optimization)</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn btn-primary" onclick="runOptimization()" style="margin-top:10px">⚡ ค้นหาเส้นทางหลบภัย</button>
+      </div>
+
+      <div id="resultsPanel" class="results-panel">
+        <div class="control-group" style="border-left-color:#4CAF50">
+          <h3 style="color:#4CAF50">📊 ผลลัพธ์การค้นหา</h3>
+          <div id="resultsContent"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  <div id="map"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const map = L.map('map').setView([13.7563, 100.5018], 13);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; OpenStreetMap &copy; CARTO',
+  subdomains: 'abcd',
+  maxZoom: 20
+}).addTo(map);
+
+let mode = null;
+let survivor = null; // {lat, lng}
+let exit = null; // {lat, lng}
+let globalHazards = [];
+let lastServerSurvivor = null;
+let lastServerExit = null;
+
+const hazardLayer = L.layerGroup().addTo(map);
+const markerLayer = L.layerGroup().addTo(map);
+const routeLayer = L.layerGroup().addTo(map);
+
+function setMode(m) {
+  mode = m;
+  const ind = document.getElementById('modeIndicator');
+  if (m === 'survivor') {
+    ind.className = 'mode-indicator mode-survivor';
+    ind.textContent = '👤 กำลังวางจุดเริ่มต้น';
+    map.getContainer().style.cursor = 'crosshair';
+  } else if (m === 'exit') {
+    ind.className = 'mode-indicator mode-exit';
+    ind.textContent = '🚪 กำลังวางทางออก';
+    map.getContainer().style.cursor = 'crosshair';
+  } else {
+    ind.className = 'mode-indicator mode-none';
+    ind.textContent = 'คลิกปุ่มเพื่อเลือกโหมด';
+    map.getContainer().style.cursor = '';
+  }
+}
+
+map.on('click', function(e) {
+  if (mode === 'survivor') {
+    survivor = e.latlng;
+    renderMarkers();
+    setMode(null);
+  } else if (mode === 'exit') {
+    exit = e.latlng;
+    renderMarkers();
+    setMode(null);
+  }
+});
+
+function renderMarkers() {
+  markerLayer.clearLayers();
+  if (survivor) {
+    L.circleMarker(survivor, { color: '#4CAF50', fillColor: '#4CAF50', fillOpacity: 1, radius: 8, weight: 3 })
+      .addTo(markerLayer).bindPopup('👤 จุดเริ่มต้น').openPopup();
+  }
+  if (exit) {
+    L.marker(exit, {
+      icon: L.divIcon({ html: '<div style="font-size:32px; filter: drop-shadow(0 0 10px #FF9800);">🚪</div>', className: '', iconSize: [32,32], iconAnchor: [16,16] })
+    }).addTo(markerLayer).bindPopup('🚪 ทางออก');
+  }
+}
+
+// Fetch hazards
+function fetchHazards() {
+  fetch('/api/hazards')
+  .then(r => r.json())
+  .then(data => {
+    // Update Severity Panel
+    const sevPanel = document.getElementById('severityPanel');
+    const sevText = document.getElementById('overallSeverity');
+    if (data.hazards && data.hazards.length > 0) {
+      const h = data.hazards[0];
+      const sev = h.severity || 5;
+      let col = "#4CAF50";
+      if (sev > 6) col = "#F44336";
+      else if (sev > 3) col = "#FF9800";
+      
+      sevPanel.style.borderLeftColor = col;
+      sevText.style.color = col;
+      sevText.innerHTML = `${h.level_label || 'ไม่ระบุ'} (ระดับ: ${sev}/10)`;
+    } else {
+      sevPanel.style.borderLeftColor = "#7A9BB5";
+      sevText.style.color = "#7A9BB5";
+      sevText.innerHTML = "รอข้อมูลวิเคราะห์...";
+    }
+
+    hazardLayer.clearLayers();
+    if (Array.isArray(data)) {
+        globalHazards = data;
+      } else {
+        globalHazards = data.hazards || [];
+        if (data.survivor && JSON.stringify(data.survivor) !== JSON.stringify(lastServerSurvivor)) {
+          survivor = data.survivor;
+          lastServerSurvivor = data.survivor;
+          renderMarkers();
+          map.setView([survivor.lat, survivor.lng], 8); // ซูมแผนที่ออกเพื่อให้เห็นรัศมีขนาดใหญ่
+        }
+        if (data.exit && JSON.stringify(data.exit) !== JSON.stringify(lastServerExit)) {
+          exit = data.exit;
+          lastServerExit = data.exit;
+          renderMarkers();
+        }
+      }
+      renderHazards();
+    }).catch(console.error);
+}
+
+function renderHazards() {
+  hazardLayer.clearLayers();
+  globalHazards.forEach(h => {
+    let color = '#2196F3';
+    if(h.severity >= 8) color = '#F44336';
+    else if(h.severity >= 5) color = '#FF9800';
+
+    const circle = L.circle([h.lat, h.lng], {
+      color: color, fillColor: color, fillOpacity: 0.3, radius: h.radius_m || 200, weight: 2
+    }).addTo(hazardLayer);
+    
+    circle.bindPopup(`<div style="font-family:'Segoe UI'; color:#333;">
+      <b>🌊 พื้นที่น้ำท่วม</b><br>
+      ความรุนแรง: ${h.severity}/10<br>
+      คำอธิบาย: ${h.level_label}<br>
+      ความมั่นใจ: ${h.confidence}%</div>`);
+  });
+}
+
+// Update hazards every 3 seconds
+setInterval(fetchHazards, 3000);
+fetchHazards();
+
+// Optimize route
+function runOptimization() {
+  if (!survivor || !exit) {
+    alert("กรุณาวางจุดเริ่มต้นและทางออกบนแผนที่");
+    return;
+  }
+  
+  routeLayer.clearLayers();
+  document.getElementById('resultsPanel').classList.remove('show');
+  const btn = document.querySelector('.btn-primary');
+  btn.textContent = 'กำลังคำนวณ...';
+  btn.disabled = true;
+
+  const payload = {
+    user_lat: survivor.lat,
+    user_lng: survivor.lng,
+    exit_lat: exit.lat,
+    exit_lng: exit.lng,
+    algorithm: document.getElementById('algorithm').value
+  };
+
+  fetch('/api/optimize', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+  .then(r => r.json())
+  .then(data => {
+    btn.textContent = '⚡ ค้นหาเส้นทางหลบภัย';
+    btn.disabled = false;
+    
+    if (data.path && data.path.length > 0) {
+      const polyline = L.polyline(data.path, { color: '#4CAF50', weight: 6, opacity: 0.8, dashArray: '10, 8' }).addTo(routeLayer);
+      map.fitBounds(polyline.getBounds().pad(0.2));
+      
+      // Highlight danger points
+      if (data.danger_points) {
+        data.danger_points.forEach(p => {
+          L.circleMarker([p.lat, p.lng], { color: '#F44336', fillColor: '#F44336', fillOpacity: 0.8, radius: 6 })
+            .addTo(routeLayer).bindTooltip(`อันตราย: ${(p.danger*100).toFixed(0)}%`);
+        });
+      }
+      
+      showResults(data);
+    }
+  })
+  .catch(err => {
+    console.error(err);
+    btn.textContent = '⚡ ค้นหาเส้นทางหลบภัย';
+    btn.disabled = false;
+    alert("เกิดข้อผิดพลาดในการค้นหาเส้นทาง");
+  });
+}
+
+function showResults(data) {
+  const panel = document.getElementById('resultsPanel');
+  panel.classList.add('show');
+  
+  let html = `
+    <div class="result-card">
+      <h4>🤖 Algorithm: ${data.algorithm}</h4>
+      <div class="stat"><span>⏱ เวลาคำนวณ</span><span>${data.elapsed_sec} วิ</span></div>
+      <div class="stat"><span>📍 ระยะทาง (Waypoints)</span><span>${data.waypoints} จุด</span></div>
+      <div class="stat"><span>💰 Cost เส้นทาง</span><span style="color:#FF9800">${data.path_cost.toFixed(1)}</span></div>
+    </div>
+    <div class="result-card">
+      <h4>⚠️ ระดับความอันตราย (Danger)</h4>
+      <div class="stat"><span>🔴 สูงสุด</span><span style="color:${data.danger_stats.max > 0.6 ? '#F44336' : '#E8F0F8'}">${(data.danger_stats.max*100).toFixed(1)}%</span></div>
+      <div class="stat"><span>🟡 เฉลี่ย</span><span>${(data.danger_stats.avg*100).toFixed(1)}%</span></div>
+    </div>
+    <div class="result-card">
+      <h4>💡 คำแนะนำ</h4>
+  `;
+  
+  // Clean up duplicate tips for same hazard type
+  const uniqueTips = [];
+  if(data.tips && data.tips.length > 0) {
+    const seenTips = new Set();
+    data.tips.forEach(t => {
+      if(!seenTips.has(t.tip)) {
+        seenTips.add(t.tip);
+        uniqueTips.push(t.tip);
+      }
+    });
+    
+    uniqueTips.forEach(tip => {
+      html += `<div class="tip-item">• ${tip}</div>`;
+    });
+  } else {
+    html += `<div class="tip-item">ปลอดภัย เดินทางได้ตามปกติ</div>`;
+  }
+  html += `</div>`;
+  
+  document.getElementById('resultsContent').innerHTML = html;
+  
+  // Smooth scroll to bottom
+  const sidebar = document.querySelector('.sidebar-body');
+  sidebar.scrollTo({ top: sidebar.scrollHeight, behavior: 'smooth' });
+}
+</script>
+</body>
+</html>

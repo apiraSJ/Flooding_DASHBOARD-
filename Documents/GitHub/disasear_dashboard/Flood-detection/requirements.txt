@@ -1,0 +1,7 @@
+#ตั้งค่าเวอร์ชั่น library ที่ต้องการใช้งาน เอาให้ตรงเวอร์นะครับ ถ้าไม่ตรงให้ uninstall แล้ว install ใหม่ครับ
+# Usage: pip install -r requirements.txt
+#me .txt มาให้ กดให้ copilot มันติดตั้งตาม auto ได้นะครับ
+tk==0.1.0
+ultralytics==8.0.116
+shapely==2.0.1
+tkintermapview
