@@ -13,19 +13,37 @@ except ImportError as e:
         "Missing dependency: install Flask and Flask-CORS with 'pip install flask flask-cors'"
     ) from e
 
-import math, os, json
+import math, os, json, threading
 from pathlib import Path
 
-app = Flask(__name__, static_folder=".")
-CORS(app)
+# NOTE (security): the app no longer serves "." as a static folder — that exposed this
+# very file, the YOLO model weights, and anything else in the project directory over
+# HTTP. Only the "dashboard" subfolder (the actual frontend assets) is served.
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DASHBOARD_DIR = os.path.join(BASE_DIR, "dashboard")
+
+app = Flask(__name__, static_folder=None)
+
+# CORS origins are configurable via env var instead of allowing every origin by default.
+# For local development with the file served from the same Flask app this can stay "*",
+# but if you expose this server beyond localhost, set CORS_ORIGINS to your dashboard's
+# real origin(s), e.g. CORS_ORIGINS="https://your-dashboard.example.com"
+CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "*")
+CORS(app, origins=CORS_ORIGINS)
 
 # ── Global storage ──────────────────────────────────────
+# All mutable global state is guarded by STATE_LOCK. Flask's dev server (and most
+# production WSGI servers) can process requests concurrently across threads, so without
+# a lock, two requests touching GLOBAL_HAZARDS at the same time (e.g. /api/clear racing
+# with /api/report_flood) could interleave and corrupt the list.
+STATE_LOCK = threading.Lock()
 GLOBAL_HAZARDS = []
 GLOBAL_SURVIVOR = None
 GLOBAL_EXIT = None
 EARTH_RADIUS_M = 6371000
 DEFAULT_HAZARD_RADIUS_M = 500
 DEFAULT_SAFETY_MARGIN_M = 500
+HAZARD_MERGE_TOL_M = 60  # hazards within this many meters of each other are treated as the same one (update, not duplicate)
 
 # ── Coordinate system ──────────────────────────────────
 REF_LAT = 13.7563
@@ -114,45 +132,71 @@ def generate_safe_exit(survivor, hazards, safety_margin_m=DEFAULT_SAFETY_MARGIN_
     return offset_coordinate(nearest["lat"], nearest["lng"], candidate_distance, bearing)
 
 # ── Static file routes ────────────────────────────────
+# Only DASHBOARD_DIR is ever handed to send_from_directory, so requests can't escape
+# into the rest of the project (e.g. this server.py file or the YOLO model weights).
 @app.route("/")
 def index():
-    return send_from_directory(".", "dashboard.html")
+    return send_from_directory(DASHBOARD_DIR, "disaster_nav.html")
 
 @app.route("/disaster_nav")
 def disaster_nav_redirect():
-    return send_from_directory(
-        os.path.join(os.path.dirname(__file__), "dashboard"),
-        "disaster_nav.html"
-    )
+    return send_from_directory(DASHBOARD_DIR, "disaster_nav.html")
 
 @app.route("/dashboard/<path:filename>")
 def serve_dashboard(filename):
-    return send_from_directory(
-        os.path.join(os.path.dirname(__file__), "dashboard"),
-        filename
-    )
+    return send_from_directory(DASHBOARD_DIR, filename)
 
 @app.route("/api/hazards", methods=["GET"])
 def get_hazards():
-    return jsonify({
-        "hazards": GLOBAL_HAZARDS,
-        "survivor": GLOBAL_SURVIVOR,
-        "exit": GLOBAL_EXIT,
-    })
+    with STATE_LOCK:
+        return jsonify({
+            "hazards": list(GLOBAL_HAZARDS),
+            "survivor": GLOBAL_SURVIVOR,
+            "exit": GLOBAL_EXIT,
+        })
+
+@app.route("/api/clear", methods=["POST"])
+def clear_all():
+    global GLOBAL_HAZARDS, GLOBAL_SURVIVOR, GLOBAL_EXIT
+    with STATE_LOCK:
+        GLOBAL_HAZARDS.clear()
+        GLOBAL_SURVIVOR = None
+        GLOBAL_EXIT = None
+    return jsonify({"status": "cleared"})
+
+
+@app.route("/api/remove_hazard", methods=["POST"])
+def remove_hazard():
+    global GLOBAL_HAZARDS
+    data = request.json
+    lat = data.get("lat")
+    lng = data.get("lng")
+    if lat is None or lng is None:
+        return jsonify({"error": "lat/lng required"}), 400
+    with STATE_LOCK:
+        before = len(GLOBAL_HAZARDS)
+        GLOBAL_HAZARDS = [
+            h for h in GLOBAL_HAZARDS
+            if not (abs(h.get("lat", 0) - lat) < 0.0001 and abs(h.get("lng", 0) - lng) < 0.0001)
+        ]
+        removed = before - len(GLOBAL_HAZARDS)
+    return jsonify({"status": "ok", "removed": removed})
+
 
 @app.route("/api/report_flood", methods=["POST"])
 def report_flood():
-    data = request.json
+    data = request.json or {}
     severity = data.get("severity", 5)
+    confidence = data.get("confidence", 0)
     lat = data.get("lat", 13.7563)
     lng = data.get("lng", 100.5018)
 
     if severity <= 3:
-        radius_m = 2000
+        radius_m = 200 + int(confidence * 6)
     elif severity <= 6:
-        radius_m = 20000
+        radius_m = 500 + int(confidence * 20)
     else:
-        radius_m = 100000
+        radius_m = 1000 + int(confidence * 40)
 
     new_hazard = {
         "type": "flood",
@@ -161,19 +205,41 @@ def report_flood():
         "confidence": data.get("confidence", 0),
         "level_label": data.get("level_label", "Unknown")
     }
-    GLOBAL_HAZARDS.append(new_hazard)
-
-    user_dist_m = float(data.get("user_dist_m", 0))
-    user_dir = data.get("user_dir", "N")
-    bearings = {"N": 0, "NE": 45, "E": 90, "SE": 135, "S": 180, "SW": 225, "W": 270, "NW": 315}
-    bearing_deg = bearings.get(user_dir, 0)
-
-    total_dist_from_center_m = radius_m + user_dist_m
-    survivor = offset_coordinate(lat, lng, total_dist_from_center_m, bearing_deg)
 
     global GLOBAL_SURVIVOR, GLOBAL_EXIT
-    GLOBAL_SURVIVOR = survivor
-    GLOBAL_EXIT = generate_safe_exit(survivor, GLOBAL_HAZARDS)
+    with STATE_LOCK:
+        if severity <= 0:
+            # "NO FLOOD" report: don't draw a fake hazard circle on the map. Previously
+            # every report (including "no flood") appended a new hazard, so a long video
+            # with a stable camera would flood the map with hundreds of overlapping,
+            # meaningless circles at severity 0.
+            existing_idx = None
+        else:
+            # Update the existing hazard at (roughly) this location instead of appending
+            # a duplicate every time YOLO re-reports the same physical spot. Without this,
+            # a long-running video sends a report every ~150 frames or on every status
+            # change, and GLOBAL_HAZARDS grows without bound at the same coordinates.
+            existing_idx = None
+            for i, h in enumerate(GLOBAL_HAZARDS):
+                if haversine(lat, lng, h["lat"], h["lng"]) <= HAZARD_MERGE_TOL_M:
+                    existing_idx = i
+                    break
+
+            if existing_idx is not None:
+                GLOBAL_HAZARDS[existing_idx] = new_hazard
+            else:
+                GLOBAL_HAZARDS.append(new_hazard)
+
+        user_dist_m = float(data.get("user_dist_m", 0))
+        user_dir = data.get("user_dir", "N")
+        bearings = {"N": 0, "NE": 45, "E": 90, "SE": 135, "S": 180, "SW": 225, "W": 270, "NW": 315}
+        bearing_deg = bearings.get(user_dir, 0)
+
+        total_dist_from_center_m = radius_m + user_dist_m
+        survivor = offset_coordinate(lat, lng, total_dist_from_center_m, bearing_deg)
+
+        GLOBAL_SURVIVOR = survivor
+        GLOBAL_EXIT = generate_safe_exit(survivor, GLOBAL_HAZARDS)
 
     return jsonify({"status": "received", "hazard": new_hazard})
 
@@ -189,31 +255,32 @@ def report_flood_v2():
     confidence = data.get("confidence", 0)
     level_label = data.get("level_label", "Unknown")
 
-    GLOBAL_HAZARDS.clear()
-    seen_hazards = set()
-
-    for h in hazards:
-        lat = h.get("lat", 13.7563)
-        lng = h.get("lng", 100.5018)
-        radius_m = h.get("radius_m") or DEFAULT_HAZARD_RADIUS_M
-        hazard_key = (round(lat, 7), round(lng, 7), h.get("type", "flood"))
-        if hazard_key in seen_hazards:
-            continue
-        seen_hazards.add(hazard_key)
-        GLOBAL_HAZARDS.append({
-            "type": h.get("type", "flood"),
-            "lat": lat, "lng": lng,
-            "severity": h.get("severity", severity),
-            "radius_m": radius_m,
-            "confidence": confidence,
-            "level_label": level_label,
-        })
-
     global GLOBAL_SURVIVOR, GLOBAL_EXIT
-    if survivors:
-        first = survivors[0]
-        GLOBAL_SURVIVOR = {"lat": first["lat"], "lng": first["lng"]}
-        GLOBAL_EXIT = generate_safe_exit(GLOBAL_SURVIVOR, GLOBAL_HAZARDS)
+    with STATE_LOCK:
+        GLOBAL_HAZARDS.clear()
+        seen_hazards = set()
+
+        for h in hazards:
+            lat = h.get("lat", 13.7563)
+            lng = h.get("lng", 100.5018)
+            radius_m = h.get("radius_m") or DEFAULT_HAZARD_RADIUS_M
+            hazard_key = (round(lat, 7), round(lng, 7), h.get("type", "flood"))
+            if hazard_key in seen_hazards:
+                continue
+            seen_hazards.add(hazard_key)
+            GLOBAL_HAZARDS.append({
+                "type": h.get("type", "flood"),
+                "lat": lat, "lng": lng,
+                "severity": h.get("severity", severity),
+                "radius_m": radius_m,
+                "confidence": confidence,
+                "level_label": level_label,
+            })
+
+        if survivors:
+            first = survivors[0]
+            GLOBAL_SURVIVOR = {"lat": first["lat"], "lng": first["lng"]}
+            GLOBAL_EXIT = generate_safe_exit(GLOBAL_SURVIVOR, GLOBAL_HAZARDS)
 
     return jsonify({
         "status": "received",
@@ -223,5 +290,10 @@ def report_flood_v2():
     })
 
 if __name__ == "__main__":
-    print("RescuOpt AI Server starting on http://127.0.0.1:5000/dashboard/disaster_nav.html")
-    app.run(debug=True, port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    # Debug mode defaults to OFF: Werkzeug's interactive debugger lets anyone who can
+    # reach an endpoint that raises an exception execute arbitrary code on the server.
+    # Only enable it locally with FLASK_DEBUG=1 while developing.
+    debug = os.environ.get("FLASK_DEBUG", "0") == "1"
+    print(f"RescuOpt AI Server starting on http://127.0.0.1:{port}/dashboard/disaster_nav.html")
+    app.run(debug=debug, port=port)

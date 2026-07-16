@@ -6,11 +6,11 @@ echo =========================================
 echo.
 
 echo [1/2] Starting Server (Dashboard)...
-start "RescuOpt Server" cmd /k "python Server.py"
+start "RescuOpt Server" cmd /k "C:\\Users\\arin\\miniconda3\\python.exe Server.py"
 
 echo [2/2] Starting Main App (Tkinter/YOLO)...
 cd Flood-detection
-start "RescuOpt Desktop App" cmd /k "python main.py"
+start "RescuOpt Desktop App" cmd /k "C:\\Users\\arin\\miniconda3\\python.exe main.py"
 
 echo.
 echo System is running! 

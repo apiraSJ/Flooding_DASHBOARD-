@@ -1,0 +1,1455 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FloodOpt AI - Flood Navigation Optimization</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', system-ui, sans-serif; }
+body, html { height: 100%; background: #0a1628; color: #e0e0e0; }
+.container { display: flex; height: 100vh; }
+
+.sidebar { width: 380px; min-width: 380px; background: #0f1e36; display: flex; flex-direction: column; overflow: hidden; border-right: 2px solid #1a3a5c; }
+.sidebar-header { background: linear-gradient(135deg, #0c1929, #0f2744); padding: 16px 20px; border-bottom: 2px solid #0ea5e9; }
+.sidebar-header h1 { font-size: 22px; color: #38bdf8; letter-spacing: 1px; }
+.sidebar-header p { font-size: 12px; color: #64748b; margin-top: 4px; }
+.sidebar-body { flex: 1; overflow-y: auto; padding: 14px 16px; }
+
+.control-group { background: #132a46; border-radius: 8px; padding: 14px; margin-bottom: 12px; border-left: 3px solid #0ea5e9; }
+.control-group h3 { font-size: 13px; color: #38bdf8; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+.row { display: flex; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+.row > * { flex: 1; min-width: 0; }
+
+label { display: block; font-size: 11px; color: #94a3b8; margin-bottom: 2px; }
+select, input[type="range"], input[type="number"] { width: 100%; padding: 7px 10px; background: #1e3a5f; border: 1px solid #2d5a8a; color: #fff; border-radius: 4px; font-size: 12px; outline: none; }
+select:focus, input:focus { border-color: #0ea5e9; }
+input[type="range"] { appearance: none; -webkit-appearance: none; padding: 0; height: 6px; background: #1e3a5f; border-radius: 3px; }
+input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #38bdf8; cursor: pointer; }
+.range-value { font-size: 12px; color: #38bdf8; font-weight: bold; text-align: right; }
+
+.btn { padding: 10px 16px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; transition: all 0.2s; width: 100%; }
+.btn-primary { background: #0284c7; color: #fff; }
+.btn-primary:hover { background: #0369a1; box-shadow: 0 0 15px rgba(14,165,233,0.4); }
+.btn-primary:disabled { background: #1e3a5f; color: #475569; cursor: not-allowed; box-shadow: none; }
+.btn-success { background: #059669; color: #fff; }
+.btn-success:hover { background: #047857; }
+.btn-warning { background: #d97706; color: #fff; }
+.btn-danger { background: #dc2626; color: #fff; }
+.btn-danger:hover { background: #b91c1c; }
+.btn-outline { background: transparent; border: 1px solid #2d5a8a; color: #94a3b8; }
+.btn-outline:hover { border-color: #0ea5e9; color: #38bdf8; }
+.btn-sm { padding: 5px 10px; font-size: 11px; width: auto; }
+.btn-group { display: flex; gap: 6px; margin-top: 8px; }
+.btn-group .btn { flex: 1; }
+
+.mode-indicator { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 12px; font-size: 11px; font-weight: bold; }
+.mode-flood { background: rgba(14,165,233,0.2); color: #38bdf8; }
+.mode-survivor { background: rgba(5,150,105,0.2); color: #34d399; }
+.mode-exit { background: rgba(217,119,6,0.2); color: #fbbf24; }
+.mode-none { background: rgba(255,255,255,0.1); color: #64748b; }
+
+.item-list { max-height: 140px; overflow-y: auto; font-size: 11px; }
+.item-entry { display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; background: #1a3352; border-radius: 4px; margin-bottom: 3px; }
+.item-entry .del { color: #f87171; cursor: pointer; font-weight: bold; padding: 0 4px; }
+.item-entry .del:hover { text-shadow: 0 0 8px #ef4444; }
+
+.results-panel { display: none; }
+.results-panel.show { display: block; }
+
+.result-card { background: #132a46; border-radius: 6px; padding: 12px; margin-bottom: 8px; font-size: 12px; }
+.result-card h4 { color: #38bdf8; margin-bottom: 6px; font-size: 13px; }
+.result-card .stat { display: flex; justify-content: space-between; padding: 2px 0; border-bottom: 1px solid #1a3352; }
+.result-card .stat:last-child { border-bottom: none; }
+
+#map { flex: 1; height: 100vh; position: relative; }
+
+#statusHud { display: none; position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 1000; background: rgba(15,30,54,0.92); border: 1px solid #0ea5e9; border-radius: 10px; padding: 10px 22px; font-size: 13px; color: #38bdf8; font-weight: bold; text-align: center; min-width: 280px; box-shadow: 0 4px 24px rgba(14,165,233,0.25); backdrop-filter: blur(6px); pointer-events: none; }
+#statusHud.show { display: block; }
+#statusHud .hud-algo { font-size: 11px; color: #94a3b8; margin-bottom: 2px; }
+#statusHud .hud-step { font-size: 15px; }
+#statusHud .hud-detail { font-size: 10px; color: #64748b; margin-top: 2px; }
+
+.leaflet-popup-content { font-size: 12px; line-height: 1.4; min-width: 160px; }
+.leaflet-popup-content strong { color: #0ea5e9; }
+
+.tip-item { padding: 4px 8px; margin: 2px 0; border-radius: 3px; font-size: 11px; }
+.tip-flood { background: rgba(14,165,233,0.15); border-left: 3px solid #0ea5e9; }
+
+/* CSP toggle */
+.toggle-row { display: flex; gap: 12px; margin-top: 6px; flex-wrap: wrap; }
+.toggle-label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #94a3b8; cursor: pointer; }
+.toggle-label input[type="checkbox"] { accent-color: #0ea5e9; width: 16px; height: 16px; cursor: pointer; }
+
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: #0f1e36; }
+::-webkit-scrollbar-thumb { background: #2d5a8a; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #3b82f6; }
+
+/* Weight Sliders styling */
+.soft-weight-slider {
+  accent-color: #fbbf24;
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <h1>FLOODOPT AI</h1>
+      <p>Flood Evacuation Optimization Engine</p>
+    </div>
+    <div class="sidebar-body">
+      
+      <div class="control-group">
+        <h3>วางจุดบนแผนที่</h3>
+          <div class="btn-group">
+            <button class="btn btn-sm btn-primary" onclick="setMode('hazard')">จุดน้ำท่วม</button>
+            <button class="btn btn-sm btn-success" onclick="setMode('survivor')">ผู้รอดชีวิต</button>
+            <button class="btn btn-sm btn-warning" onclick="setMode('exit')">ทางออก</button>
+          </div>
+          <div style="margin-top:6px;text-align:center">
+            <span id="modeIndicator" class="mode-indicator mode-none">คลิกปุ่มเพื่อเลือกโหมด</span>
+          </div>
+        </div>
+
+        <div class="control-group" id="hazardConfig">
+          <h3>กำหนดค่าน้ำท่วม</h3>
+          <div class="row">
+            <div>
+              <label>ความรุนแรง</label>
+              <input type="range" id="hazardSeverity" min="1" max="10" value="7">
+              <div class="range-value" id="hazardSeverityVal">7</div>
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label>รัศมี (ม.)</label>
+              <input type="range" id="hazardRadius" min="50" max="5000" value="500" step="50">
+              <div class="range-value" id="hazardRadiusVal">500</div>
+            </div>
+          </div>
+          <p style="font-size:11px;color:#64748b;margin-top:4px">คลิกที่แผนที่เพื่อวางจุดน้ำท่วม | รัศมีปรับได้ 50-5,000 ม.</p>
+        </div>
+
+        <div class="control-group" id="survivorConfig" style="display:none">
+          <h3>กำหนดค่าผู้รอดชีวิต</h3>
+          <div class="row">
+            <div><label>ชื่อ</label><input type="text" id="survivorName" value="คนที่ 1" style="width:100%;padding:7px 10px;background:#1e3a5f;border:1px solid #2d5a8a;color:#fff;border-radius:4px;font-size:12px"></div>
+          </div>
+          <div class="row">
+            <div><label>สุขภาพ</label><input type="range" id="survivorHealth" min="0" max="100" value="60"></div>
+            <div><label>การเคลื่อนที่</label><input type="range" id="survivorMobility" min="0" max="100" value="70"></div>
+          </div>
+          <div class="row">
+            <div><label>เสบียง/น้ำ</label><input type="range" id="survivorSupplies" min="0" max="100" value="50"></div>
+          </div>
+          <p style="font-size:11px;color:#64748b;margin-top:4px">คลิกที่แผนที่เพื่อวาง</p>
+        </div>
+
+        <div class="control-group">
+          <h3>จุดที่วางแล้ว</h3>
+          <div style="display:flex;gap:10px;margin-bottom:6px;font-size:11px">
+            <span>น้ำท่วม: <span id="hazardCount">0</span></span>
+            <span>ผู้รอดชีวิต: <span id="survivorCount">0</span></span>
+            <span>ทางออก: <span id="exitCount">0</span></span>
+          </div>
+          <div id="itemList" class="item-list"></div>
+          <button class="btn btn-sm btn-outline" onclick="clearAll()" style="margin-top:6px">ล้างทั้งหมด</button>
+        </div>
+
+        <div class="control-group">
+          <h3>การค้นหาเส้นทาง</h3>
+          <div class="row">
+            <div>
+              <label>ขั้นตอนวิธี</label>
+              <select id="algorithm">
+                <optgroup label="Search Algorithm">
+                  <option value="astar">A* Search (Search — รับประกัน Optimal)</option>
+                  <option value="bfs">BFS (Search —  Fewest Steps)</option>
+                  <option value="greedy">Greedy Best-First (Heuristic Search)</option>
+                </optgroup>
+                <optgroup label="Optimization Algorithm">
+                  <option value="sa">Simulated Annealing (Optimization)</option>
+                  <option value="hc">Hill Climbing — Steepest (Optimization)</option>
+                  <option value="ga">Genetic Algorithm (Optimization)</option>
+                </optgroup>
+                <optgroup label="Constraint Algorithm">
+                  <option value="backtrack">Backtracking Search (Constraint)</option>
+                  <option value="ac3">Arc Consistency AC-3 (Constraint)</option>
+                </optgroup>
+              </select>
+            </div>
+            <div>
+              <label>Grid Step (ม.)</label>
+              <input type="range" id="gridStep" min="10" max="100" value="40" step="5">
+              <div class="range-value" id="gridStepVal">40</div>
+            </div>
+          </div>
+          <div class="row" id="heuristicRow" style="margin-top:6px">
+            <div>
+              <label>ค่าประมาณ (Heuristic)</label>
+              <select id="heuristicType">
+                <option value="euclidean">Euclidean Distance</option>
+                <option value="manhattan">Manhattan Distance</option>
+              </select>
+            </div>
+          </div>
+          <div class="row" style="margin-top:6px">
+            <div>
+              <label>ความเร็วแอนิเมชัน</label>
+              <input type="range" id="animSpeed" min="1" max="100" value="70">
+              <div class="range-value" id="animSpeedVal">70</div>
+            </div>
+          </div>
+        </div>
+
+      <div class="control-group" style="border-left-color:#8b5cf6">
+        <div class="toggle-row">
+          <label class="toggle-label">
+            <input type="checkbox" id="cspEnabled"> เปิด Hard Constraints
+          </label>
+          <label class="toggle-label">
+            <input type="checkbox" id="cspScoring" checked> Soft Scoring
+          </label>
+        </div>
+        <p style="font-size:11px;color:#64748b;margin-top:6px">
+          เมื่อ "เปิด Hard Constraints" ถูก<strong>ปิด</strong>ไว้ ทุกอัลกอริทึมจะไม่ถูกบังคับให้เลี่ยงพื้นที่อันตราย
+          (ยังคงคิดต้นทุนความเสี่ยงแบบ soft ผ่าน movement cost อยู่) — เมื่อ<strong>เปิด</strong>ไว้ ทุกอัลกอริทึม
+          (Search / Backtracking / AC-3 / GA / SA / Hill Climbing) จะถูกบังคับให้ไม่เดินผ่านจุดที่มีความอันตราย
+          เกินค่า "ระดับอันตรายสูงสุดที่ยอมรับได้" ด้านล่างอย่างสม่ำเสมอ
+        </p>
+      </div>
+
+      <div class="control-group" style="border-left-color:#ef4444">
+        <h3>Hard Constraints (กฎบังคับ)</h3>
+          
+          <label class="toggle-label" style="margin-bottom:8px">
+            <input type="checkbox" id="cspStartKnown" checked disabled> Start Node Known
+          </label>
+          <label class="toggle-label" style="margin-bottom:8px">
+            <input type="checkbox" id="cspStartSafe" checked> Start Node Safe (จุดเริ่มต้นต้องมีอันตรายน้อยกว่าขีดจำกัด)
+          </label>
+          <label class="toggle-label" style="margin-bottom:8px">
+            <input type="checkbox" id="cspExitSafe" checked> Exit Node Safe (ทางออกต้องอยู่นอกพื้นที่ภัยพิบัติ)
+          </label>
+          <label class="toggle-label" style="margin-bottom:8px">
+            <input type="checkbox" id="cspAvoidExtremeDanger" checked> Avoid Extreme Danger (ไม่สัญจรผ่านจุดวิกฤต)
+          </label>
+          <div style="margin-left:22px; margin-bottom:10px">
+            <label>ระดับอันตรายสูงสุดที่ยอมรับได้</label>
+            <input type="range" id="cspMaxDangerLimit" min="0.1" max="0.9" value="0.5" step="0.05" oninput="document.getElementById('cspMaxDangerLimitVal').textContent = Math.round(this.value * 100) + '%'">
+            <div class="range-value" id="cspMaxDangerLimitVal">50%</div>
+          </div>
+          <label class="toggle-label" style="margin-bottom:8px">
+            <input type="checkbox" id="cspMaxDistance" checked> Max Distance Limit (จำกัดระยะทางหลบภัย)
+          </label>
+          <div style="margin-left:22px; margin-bottom:10px">
+            <label>ระยะทางรวมสูงสุด (เมตร)</label>
+            <input type="number" id="cspMaxDistanceLimit" value="2000" min="200" max="10000" step="100" style="width:100%">
+          </div>
+          <label class="toggle-label">
+            <input type="checkbox" id="cspPathConnected" checked disabled> Path Connected
+          </label>
+        </div>
+
+        <div class="control-group" style="border-left-color:#fbbf24">
+          <h3>Soft Constraints (ความพึงพอใจ)</h3>
+          <div style="font-size:11px;color:#94a3b8;margin-bottom:10px">ปรับอัตราส่วนน้ำหนักความสำคัญ (รวม 100%)</div>
+          
+          <div style="margin-bottom:8px">
+            <label>Shortest Distance Weight (ระยะทางสั้นที่สุด)</label>
+            <input type="range" class="soft-weight-slider" id="weightDist" min="0" max="100" value="40" oninput="normalizeWeights()">
+            <div class="range-value" id="weightDistVal">40%</div>
+          </div>
+          <div style="margin-bottom:8px">
+            <label>Lowest Danger Weight (ปลอดภัยที่สุด)</label>
+            <input type="range" class="soft-weight-slider" id="weightRisk" min="0" max="100" value="35" oninput="normalizeWeights()">
+            <div class="range-value" id="weightRiskVal">35%</div>
+          </div>
+          <div style="margin-bottom:8px">
+            <label>Fastest Time / Steps Weight (ความเร็วในการเดิน)</label>
+            <input type="range" class="soft-weight-slider" id="weightTime" min="0" max="100" value="15" oninput="normalizeWeights()">
+            <div class="range-value" id="weightTimeVal">15%</div>
+          </div>
+          <div style="margin-bottom:8px">
+            <label>Max Safety Margin Weight (ห่างศูนย์กลางภัยพิบัติ)</label>
+            <input type="range" class="soft-weight-slider" id="weightSafety" min="0" max="100" value="10" oninput="normalizeWeights()">
+            <div class="range-value" id="weightSafetyVal">10%</div>
+          </div>
+          <div style="text-align:right;font-size:11px;color:#34d399;font-weight:bold;margin-top:5px" id="weightSumLabel">รวมน้ำหนัก: 100%</div>
+        </div>
+
+      <button id="btnRun" class="btn btn-primary" onclick="runOptimization()" style="margin-top:10px">RUN OPTIMIZATION</button>
+      <button id="btnSkip" class="btn btn-warning" onclick="skipAnimation()" style="margin-top:6px;display:none">ข้ามแอนิเมชัน (Skip)</button>
+
+      <div id="resultsPanel" class="results-panel">
+        <div class="control-group" style="border-left-color:#059669">
+          <h3 style="color:#34d399">ผลลัพธ์การ Optimize</h3>
+          <div id="resultsContent"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="map">
+    <div id="statusHud">
+      <div class="hud-algo" id="hudAlgo"></div>
+      <div class="hud-step" id="hudStep"></div>
+      <div class="hud-detail" id="hudDetail"></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// =====================================================================
+// 1. COORDINATE SYSTEM
+// =====================================================================
+const REF_LAT = 13.7563;
+const REF_LNG = 100.5018;
+const DEG_M_LAT = 111320;
+
+function toMeters(lat, lng) {
+  const dx = (lng - REF_LNG) * DEG_M_LAT * Math.cos(REF_LAT * Math.PI / 180);
+  const dy = (lat - REF_LAT) * DEG_M_LAT;
+  return { x: Math.round(dx), y: Math.round(dy) };
+}
+function toLatLng(x, y) {
+  const lng = REF_LNG + x / (DEG_M_LAT * Math.cos(REF_LAT * Math.PI / 180));
+  const lat = REF_LAT + y / DEG_M_LAT;
+  return [lat, lng];
+}
+
+// =====================================================================
+// 2. STATE
+// =====================================================================
+const state = {
+  mode: null,
+  hazards: [],
+  survivors: [],
+  exit: null,
+  serverRemovedKeys: new Set(),  // keys of hazards user deleted (prevent re-add)
+  serverKnownKeys: new Set(),    // keys of hazards already added from server
+  weights: { shortest_distance: 0.40, lowest_risk: 0.35, fastest_time: 0.15, max_safety: 0.10 }, // normalized soft-constraint weights (kept in sync by normalizeWeights)
+};
+let isRunning = false;
+let skipRequested = false;
+
+// Escapes user-supplied text before it is inserted via innerHTML, to prevent stored XSS
+// (e.g. survivor names typed by the user going straight into popups / lists / results).
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// KEY_TOL controls both the string precision used to build hazard dedup keys and the
+// numeric tolerance used for fuzzy matching. It must match the server's tolerance
+// (see /api/remove_hazard in server.py, which uses abs(diff) < 0.0001) so a hazard
+// removed by the user cannot reappear because of tiny coordinate jitter between polls.
+const KEY_TOL = 0.0001;
+function hazardKey(lat, lng) {
+  // Round to the same precision as KEY_TOL so keys are stable across polls.
+  return `${lat.toFixed(4)},${lng.toFixed(4)}`;
+}
+
+// =====================================================================
+// 3. MAP
+// =====================================================================
+const map = L.map('map').setView([REF_LAT, REF_LNG], 14);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
+
+const hazardLayers = L.layerGroup().addTo(map);
+const survivorLayers = L.layerGroup().addTo(map);
+const exitLayers = L.layerGroup().addTo(map);
+const routeLayers = L.layerGroup().addTo(map);
+const animLayers = L.layerGroup().addTo(map);
+
+const FLOOD_COLOR = '#3498db';
+
+// =====================================================================
+// 4. ANIMATION HELPERS
+// =====================================================================
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+function getAnimDelay() {
+  const speed = parseInt(document.getElementById('animSpeed').value);
+  return Math.max(0, Math.round(200 * (1 - speed / 100)));
+}
+function showHud(algo, step, detail) {
+  const hud = document.getElementById('statusHud');
+  hud.classList.add('show');
+  document.getElementById('hudAlgo').textContent = algo;
+  document.getElementById('hudStep').textContent = step;
+  document.getElementById('hudDetail').textContent = detail || '';
+}
+function hideHud() {
+  document.getElementById('statusHud').classList.remove('show');
+}
+function drawAnimDot(lat, lng, color, radius = 4, opacity = 0.5) {
+  return L.circleMarker([lat, lng], {
+    color: 'transparent', fillColor: color, fillOpacity: opacity, radius, weight: 0
+  }).addTo(animLayers);
+}
+function drawAnimLine(latlngs, color, weight = 3, opacity = 0.7) {
+  return L.polyline(latlngs, { color, weight, opacity }).addTo(animLayers);
+}
+
+// =====================================================================
+// 5. MODE & MAP CLICK
+// =====================================================================
+function setMode(m) {
+  state.mode = m;
+  const ind = document.getElementById('modeIndicator');
+  if (m === 'hazard') {
+    ind.className = 'mode-indicator mode-flood'; ind.textContent = 'กำลังวางจุดน้ำท่วม';
+    document.getElementById('hazardConfig').style.display = 'block';
+    document.getElementById('survivorConfig').style.display = 'none';
+    map.getContainer().style.cursor = 'crosshair';
+  } else if (m === 'survivor') {
+    ind.className = 'mode-indicator mode-survivor'; ind.textContent = 'กำลังวางผู้รอดชีวิต';
+    document.getElementById('hazardConfig').style.display = 'none';
+    document.getElementById('survivorConfig').style.display = 'block';
+    map.getContainer().style.cursor = 'crosshair';
+  } else if (m === 'exit') {
+    ind.className = 'mode-indicator mode-exit'; ind.textContent = 'วางทางออก';
+    document.getElementById('hazardConfig').style.display = 'none';
+    document.getElementById('survivorConfig').style.display = 'none';
+    map.getContainer().style.cursor = 'crosshair';
+  } else {
+    ind.className = 'mode-indicator mode-none'; ind.textContent = 'คลิกปุ่มเพื่อเลือกโหมด';
+    map.getContainer().style.cursor = '';
+  }
+}
+
+map.on('click', function(e) {
+  if (isRunning) return;
+  const { lat, lng } = e.latlng;
+  if (state.mode === 'hazard') {
+    const severity = parseInt(document.getElementById('hazardSeverity').value);
+    const radius = parseInt(document.getElementById('hazardRadius').value);
+    state.hazards.push({ lat, lng, type: 'flood', severity, radius });
+    renderHazards(); updateItemList();
+  } else if (state.mode === 'survivor') {
+    const name = document.getElementById('survivorName').value || 'ไม่ระบุ';
+    const health = parseInt(document.getElementById('survivorHealth').value);
+    const mobility = parseInt(document.getElementById('survivorMobility').value);
+    const supplies = parseInt(document.getElementById('survivorSupplies').value);
+    const id = 'S_' + (state.survivors.length + 1);
+    state.survivors.push({ id, name, lat, lng, health, mobility, supplies });
+    renderSurvivors(); updateItemList();
+  } else if (state.mode === 'exit') {
+    state.exit = { lat, lng };
+    renderExit(); updateItemList();
+  }
+});
+
+// =====================================================================
+// 5b. BACKEND FETCH — Auto-load hazards from YOLO/Server
+// =====================================================================
+function fetchBackendHazards() {
+  // Don't mutate state.hazards mid-run: the array is passed by reference into whichever
+  // algorithm is currently animating, so inserting new hazards while it's iterating could
+  // change results mid-search. Simply skip this poll cycle and try again on the next tick.
+  if (isRunning) return;
+
+  fetch('/api/hazards')
+  .then(r => r.json())
+  .then(data => {
+    const serverHazards = data.hazards || [];
+    const serverSurvivor = data.survivor || null;
+    const serverExit = data.exit || null;
+
+    // Merge server hazards (YOLO detections) — skip user-removed ones
+    if (serverHazards.length > 0) {
+      let updated = false;
+      serverHazards.forEach(h => {
+        const key = hazardKey(h.lat, h.lng);
+        // Skip if user already placed this OR user explicitly removed it
+        if (state.serverKnownKeys.has(key) || state.serverRemovedKeys.has(key)) return;
+        const exists = state.hazards.some(existing =>
+          Math.abs(existing.lat - h.lat) < KEY_TOL &&
+          Math.abs(existing.lng - h.lng) < KEY_TOL
+        );
+        if (!exists) {
+          const radius = h.radius_m || parseInt(document.getElementById('hazardRadius').value);
+          state.hazards.push({ lat: h.lat, lng: h.lng, type: h.type || 'flood', severity: h.severity || 5, radius: radius });
+          state.serverKnownKeys.add(key);
+          updated = true;
+        }
+      });
+      if (updated) {
+        renderHazards(); updateItemList();
+      }
+    }
+
+    // Auto-place survivor if server has one
+    if (serverSurvivor) {
+      const exists = state.survivors.some(existing =>
+        Math.abs(existing.lat - serverSurvivor.lat) < 0.0001 &&
+        Math.abs(existing.lng - serverSurvivor.lng) < 0.0001
+      );
+      if (!exists && state.survivors.length === 0) {
+        const id = 'S_YOLO';
+        state.survivors.push({ id, name: 'YOLO Detection', lat: serverSurvivor.lat, lng: serverSurvivor.lng, health: 80, mobility: 80, supplies: 60 });
+        renderSurvivors(); updateItemList();
+      }
+    }
+
+    // Auto-place exit if server has one
+    if (serverExit) {
+      const exists = state.exit &&
+        Math.abs(state.exit.lat - serverExit.lat) < 0.0001 &&
+        Math.abs(state.exit.lng - serverExit.lng) < 0.0001;
+      if (!exists && !state.exit) {
+        state.exit = { lat: serverExit.lat, lng: serverExit.lng };
+        renderExit(); updateItemList();
+      }
+    }
+  }).catch(() => {});
+}
+
+// =====================================================================
+// 6. RENDERERS
+// =====================================================================
+function renderHazards() {
+  hazardLayers.clearLayers();
+  state.hazards.forEach((h, i) => {
+    const radius = h.radius || parseInt(document.getElementById('hazardRadius').value);
+    const circle = L.circle([h.lat, h.lng], {
+      color: FLOOD_COLOR, fillColor: FLOOD_COLOR, fillOpacity: 0.2, radius, weight: 2
+    }).addTo(hazardLayers);
+    circle.bindPopup(`<b>น้ำท่วม</b><br>ความรุนแรง: ${h.severity}/10<br>รัศมี: ${radius} ม.`);
+    circle.on('contextmenu', () => { state.hazards.splice(i, 1); renderHazards(); updateItemList(); });
+  });
+}
+function renderSurvivors() {
+  survivorLayers.clearLayers();
+  state.survivors.forEach((s, i) => {
+    const urgency = (100 - s.health) * 0.5 + (100 - s.mobility) * 0.3 + (100 - s.supplies) * 0.2;
+    const color = urgency >= 60 ? '#ef4444' : urgency >= 35 ? '#f59e0b' : '#10b981';
+    const m = L.circleMarker([s.lat, s.lng], {
+      color, fillColor: color, fillOpacity: 0.7, radius: 8, weight: 2
+    }).addTo(survivorLayers);
+    m.bindPopup(`<b>${escapeHtml(s.id)}: ${escapeHtml(s.name)}</b><br>HP:${s.health} Mob:${s.mobility} Sup:${s.supplies}`);
+    m.on('contextmenu', () => { state.survivors.splice(i, 1); renderSurvivors(); updateItemList(); });
+  });
+}
+function renderExit() {
+  exitLayers.clearLayers();
+  if (!state.exit) return;
+  const m = L.marker([state.exit.lat, state.exit.lng], {
+    icon: L.divIcon({ className: '', html: '<div style="font-size:28px;text-shadow:0 0 10px #0ea5e9">🚪</div>', iconSize: [30, 30], iconAnchor: [15, 15] })
+  }).addTo(exitLayers);
+  m.bindPopup('<b>ทางออก</b>');
+  m.on('contextmenu', () => { state.exit = null; renderExit(); updateItemList(); });
+}
+function renderRoute(pathLatLngs, color = '#10b981') {
+  routeLayers.clearLayers();
+  if (!pathLatLngs || pathLatLngs.length < 2) return;
+  const polyline = L.polyline(pathLatLngs, { color, weight: 5, opacity: 0.9, dashArray: '10, 6' }).addTo(routeLayers);
+  L.circleMarker(pathLatLngs[0], { color: '#0ea5e9', fillColor: '#0ea5e9', fillOpacity: 0.9, radius: 8 })
+    .addTo(routeLayers).bindTooltip('START', {permanent:true,direction:'right'});
+  L.circleMarker(pathLatLngs[pathLatLngs.length - 1], { color: '#10b981', fillColor: '#10b981', fillOpacity: 0.9, radius: 8 })
+    .addTo(routeLayers).bindTooltip('GOAL', {permanent:true,direction:'right'});
+  map.fitBounds(polyline.getBounds().pad(0.2));
+}
+
+// =====================================================================
+// 7. UI HELPERS
+// =====================================================================
+function updateItemList() {
+  document.getElementById('hazardCount').textContent = state.hazards.length;
+  document.getElementById('survivorCount').textContent = state.survivors.length;
+  document.getElementById('exitCount').textContent = state.exit ? 1 : 0;
+  let html = '';
+  state.hazards.forEach((h, i) => {
+    html += `<div class="item-entry"><span>น้ำท่วม (sev:${h.severity})</span><span class="del" onclick="removeHazard(${i})">✕</span></div>`;
+  });
+  state.survivors.forEach((s, i) => {
+    html += `<div class="item-entry"><span>${escapeHtml(s.id)} (HP:${s.health})</span><span class="del" onclick="removeSurvivor(${i})">✕</span></div>`;
+  });
+  if (state.exit) html += `<div class="item-entry"><span>ทางออก</span><span class="del" onclick="removeExit()">✕</span></div>`;
+  document.getElementById('itemList').innerHTML = html || '<div style="color:#475569;font-style:italic">ยังไม่มีจุด</div>';
+}
+function removeHazard(i) {
+  const h = state.hazards[i];
+  if (h) {
+    const key = hazardKey(h.lat, h.lng);
+    state.serverRemovedKeys.add(key);
+    state.serverKnownKeys.delete(key);
+    fetch('/api/remove_hazard', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lat: h.lat, lng: h.lng })
+    }).catch(() => {});
+  }
+  state.hazards.splice(i, 1);
+  renderHazards(); updateItemList();
+}
+function removeSurvivor(i) { state.survivors.splice(i, 1); renderSurvivors(); updateItemList(); }
+function removeExit() { state.exit = null; renderExit(); updateItemList(); }
+function clearAllClient() {
+  state.hazards = []; state.survivors = []; state.exit = null;
+  state.serverRemovedKeys = new Set();
+  state.serverKnownKeys = new Set();
+  hazardLayers.clearLayers(); survivorLayers.clearLayers();
+  exitLayers.clearLayers(); routeLayers.clearLayers(); animLayers.clearLayers();
+  document.getElementById('resultsPanel').classList.remove('show');
+  updateItemList();
+}
+function clearAll() {
+  clearAllClient();
+  fetch('/api/clear', { method: 'POST' }).catch(() => {});
+}
+function skipAnimation() { skipRequested = true; }
+
+['hazardSeverity','hazardRadius','gridStep','animSpeed'].forEach(id => {
+  const el = document.getElementById(id);
+  el.addEventListener('input', () => { document.getElementById(id + 'Val').textContent = el.value; });
+});
+document.getElementById('hazardRadius').addEventListener('change', renderHazards);
+
+// =====================================================================
+// 8. ALGORITHM DESCRIPTIONS
+// =====================================================================
+const ALGO_DESCRIPTIONS = {
+  astar: '[Search] A* ใช้ f(n) = g(n) + h(n) โดย g คือต้นทุนจริง และ h คือค่าประมาณ Manhattan รับประกันเส้นทาง Optimal เมื่อ h เป็น Admissible',
+  bfs: '[Search] BFS สำรวจทีละระดับ รับประกัน Fewest Steps เมื่อทุกก้าวมีต้นทุนเท่ากัน แต่ใช้หน่วยความจำมากกว่า A*',
+  greedy: '[Heuristic] Greedy ใช้เฉพาะ h(n) เพื่อมุ่งไปเป้าหมายให้เร็วที่สุด เร็วแต่ไม่รับประกัน Optimal',
+  sa: '[Optimization] Simulated Annealing ยอมรับทางที่แย่ลงได้ตามอุณหภูมิ T ที่ลดลง ช่วยหนี Local Minimum หา global optimum',
+  hc: '[Optimization] Hill Climbing (Steepest) เลือกเพื่อนบ้านที่ดีที่สุดเสมอ เป็น Local Search ที่เร็วแต่ติด Local Minimum ได้',
+  ga: '[Optimization] Genetic Algorithm เลียนแบบวิวัฒนาการ: Selection + Crossover + Mutation เพื่อหาคำตอบที่ดีที่สุดใน search space',
+  backtrack: '[Constraint] Backtracking ลองทีละค่า เมื่อผิดเงื่อนไขก็ย้อนกลับ รับประกันเจอคำตอบถ้ามี (Complete)',
+  ac3: '[Constraint] AC-3 ตัดโดเมนที่เป็นไปไม่ได้ออกก่อน แล้วค่อย DFS ในพื้นที่ที่เหลือ ลดการค้นหาอย่างมีประสิทธิภาพ',
+};
+
+// =====================================================================
+// 9. CORE FUNCTIONS
+// =====================================================================
+function totalDanger(mx, my, hazards) {
+  let total = 0;
+  for (const h of hazards) {
+    const hm = toMeters(h.lat, h.lng);
+    const dist = Math.hypot(mx - hm.x, my - hm.y);
+    if (dist < h.radius) total += (h.severity / 10) * (1 - dist / h.radius);
+  }
+  return Math.min(total, 1);
+}
+function movementCost(ax, ay, bx, by, hazards) {
+  const dist = Math.hypot(bx - ax, by - ay);
+  const steps = Math.max(1, Math.ceil(dist / 20));
+  let maxDanger = 0;
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    const d = totalDanger(ax + (bx-ax)*t, ay + (by-ay)*t, hazards);
+    if (d > maxDanger) maxDanger = d;
+  }
+  return dist * Math.pow(10, maxDanger * 3);
+}
+function computeBounds() {
+  const pts = [];
+  for (const h of state.hazards) { const m = toMeters(h.lat, h.lng); pts.push({x:m.x-h.radius,y:m.y-h.radius},{x:m.x+h.radius,y:m.y+h.radius}); }
+  for (const s of state.survivors) { const m = toMeters(s.lat, s.lng); pts.push(m); }
+  if (state.exit) { const m = toMeters(state.exit.lat, state.exit.lng); pts.push(m); }
+  if (!pts.length) return {minX:-500,maxX:500,minY:-500,maxY:500};
+  const margin = 300;
+  return { minX: Math.min(...pts.map(p=>p.x))-margin, maxX: Math.max(...pts.map(p=>p.x))+margin,
+           minY: Math.min(...pts.map(p=>p.y))-margin, maxY: Math.max(...pts.map(p=>p.y))+margin };
+}
+function heapPush(a,item){a.push(item);let i=a.length-1;while(i>0){const p=(i-1)>>1;if(a[p].f<=a[i].f)break;[a[p],a[i]]=[a[i],a[p]];i=p;}}
+function heapPop(a){const r=a[0];const last=a.pop();if(a.length>0){a[0]=last;let i=0;const n=a.length;while(true){let s=i;const l=i*2+1,right=i*2+2;if(l<n&&a[l].f<a[s].f)s=l;if(right<n&&a[right].f<a[s].f)s=right;if(s===i)break;[a[i],a[s]]=[a[s],a[i]];i=s;}}return r;}
+
+function isSafeMove(unsnap, gx, gy, dx, dy, hazards, thresh) {
+  if (dx === 0 || dy === 0) {
+    return totalDanger(unsnap(gx+dx), unsnap(gy+dy), hazards) <= thresh;
+  }
+  const mx1 = unsnap(gx+dx), my1 = unsnap(gy);
+  const mx2 = unsnap(gx),    my2 = unsnap(gy+dy);
+  const mx3 = unsnap(gx+dx), my3 = unsnap(gy+dy);
+  return totalDanger(mx1,my1,hazards) <= thresh &&
+         totalDanger(mx2,my2,hazards) <= thresh &&
+         totalDanger(mx3,my3,hazards) <= thresh;
+}
+
+// FIX #1: Previously this returned a hard-coded 0.6 whenever "Hard Constraints" was
+// switched OFF, so every algorithm still refused to enter cells above 60% danger even
+// though the UI implied no hard blocking would happen in that mode. Danger is capped at
+// 1.0 by totalDanger(), so returning 1.0 here means "never block a move on danger alone"
+// — the risk still shows up through movementCost()'s soft exponential penalty and through
+// the soft-constraint scoring, but it can no longer make a path physically unreachable.
+function getDangerThreshold() {
+  if (document.getElementById('cspEnabled').checked) {
+    return parseFloat(document.getElementById('cspMaxDangerLimit').value);
+  }
+  return 1.0; // Hard Constraints OFF -> no hard blocking, only soft cost applies
+}
+
+function normalizeWeights() {
+  const ids = ['weightDist', 'weightRisk', 'weightTime', 'weightSafety'];
+  const valIds = ['weightDistVal', 'weightRiskVal', 'weightTimeVal', 'weightSafetyVal'];
+  const weightKeys = ['shortest_distance', 'lowest_risk', 'fastest_time', 'max_safety'];
+  let sum = 0;
+  ids.forEach(id => sum += parseInt(document.getElementById(id).value) || 0);
+  if (sum === 0) sum = 1;
+  ids.forEach((id, i) => {
+    const raw = parseInt(document.getElementById(id).value) || 0;
+    const frac = raw / sum;
+    document.getElementById(valIds[i]).textContent = Math.round(frac * 100) + '%';
+    // Persist the *normalized fraction* (sums to 1.0) so scoreSoftConstraints actually
+    // reflects what the user set on the sliders, instead of always using hardcoded defaults.
+    state.weights[weightKeys[i]] = frac;
+  });
+  document.getElementById('weightSumLabel').textContent = 'รวมน้ำหนัก: 100%';
+}
+// Run once on load so state.weights matches the sliders' initial values.
+normalizeWeights();
+
+// =====================================================================
+// 10. CSP ENGINE
+// =====================================================================
+function checkHardConstraints(survivor, exitPt, hazards) {
+  const results = {};
+  let allPass = true;
+
+  results.start_known = !!(survivor);
+  if (!results.start_known) allPass = false;
+
+  const startSafe = document.getElementById('cspStartSafe').checked;
+  if (startSafe && survivor) {
+    const sm = toMeters(survivor.lat, survivor.lng);
+    const startDanger = totalDanger(sm.x, sm.y, hazards);
+    const maxDangerLimit = parseFloat(document.getElementById('cspMaxDangerLimit').value);
+    results.start_safe = startDanger < maxDangerLimit;
+    if (!results.start_safe) allPass = false;
+  } else {
+    results.start_safe = true;
+  }
+
+  const exitSafe = document.getElementById('cspExitSafe').checked;
+  results.exit_safe = !!(exitPt);
+  if (exitSafe && !results.exit_safe) allPass = false;
+
+  if (exitPt && hazards.length > 0) {
+    let goalBlocked = false;
+    for (const h of hazards) {
+      const d = Math.hypot(toMeters(exitPt.lat, exitPt.lng).x - toMeters(h.lat, h.lng).x,
+                           toMeters(exitPt.lat, exitPt.lng).y - toMeters(h.lat, h.lng).y);
+      if (d < (h.radius || 500)) { goalBlocked = true; break; }
+    }
+    results.goal_accessible = !goalBlocked;
+    if (exitSafe && !results.goal_accessible) allPass = false;
+  } else {
+    results.goal_accessible = true;
+  }
+
+  results.hazard_valid = hazards.every(h => h.lat != null && h.lng != null);
+  if (!results.hazard_valid) allPass = false;
+
+  results.path_connected = true;
+  if (survivor && exitPt) {
+    const sm = toMeters(survivor.lat, survivor.lng);
+    const em = toMeters(exitPt.lat, exitPt.lng);
+    const thresh = parseFloat(document.getElementById('cspMaxDangerLimit').value);
+    const gridStep = parseInt(document.getElementById('gridStep').value) || 40;
+    const snap = v => Math.round(v / gridStep);
+    const key = (x,y) => `${x},${y}`;
+    const sg = {x:snap(sm.x),y:snap(sm.y)};
+    const eg = {x:snap(em.x),y:snap(em.y)};
+    const b2 = computeBounds();
+    const minX=snap(b2.minX),maxX=snap(b2.maxX),minY=snap(b2.minY),maxY=snap(b2.maxY);
+    const q2=[[sg.x,sg.y]]; const vis=new Set([key(sg.x,sg.y)]);
+    let connected=false;
+    while(q2.length>0){
+      const [cx,cy]=q2.shift();
+      if(cx===eg.x&&cy===eg.y){connected=true;break;}
+      for(const[dx,dy] of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]]){
+        const nx=cx+dx,ny=cy+dy;
+        if(nx<minX||nx>maxX||ny<minY||ny>maxY)continue;
+        const k=key(nx,ny);if(vis.has(k))continue;
+        const mx2=nx*gridStep,my2=ny*gridStep;
+        if(totalDanger(mx2,my2,hazards)>thresh)continue;
+        vis.add(k);q2.push([nx,ny]);
+      }
+    }
+    results.path_connected = connected;
+    if (!connected) allPass = false;
+  }
+
+  return { passed: allPass, constraints: results };
+}
+
+function checkHardConstraintsPost(path, hazards) {
+  const results = {};
+  let allPass = true;
+
+  const avoidExtremeDanger = document.getElementById('cspAvoidExtremeDanger').checked;
+  const maxDangerLimit = parseFloat(document.getElementById('cspMaxDangerLimit').value);
+  if (avoidExtremeDanger) {
+    let dangerOk = true;
+    for (const p of path) {
+      if (totalDanger(p.x, p.y, hazards) > maxDangerLimit) {
+        dangerOk = false;
+        break;
+      }
+    }
+    results.avoid_extreme_danger = dangerOk;
+    if (!dangerOk) allPass = false;
+  } else {
+    results.avoid_extreme_danger = true;
+  }
+
+  const maxDistance = document.getElementById('cspMaxDistance').checked;
+  const maxDistanceLimit = parseFloat(document.getElementById('cspMaxDistanceLimit').value);
+  if (maxDistance) {
+    let totalDist = 0;
+    for (let i = 0; i < path.length - 1; i++) {
+      totalDist += Math.hypot(path[i+1].x - path[i].x, path[i+1].y - path[i].y);
+    }
+    results.max_distance = totalDist <= maxDistanceLimit;
+    if (!results.max_distance) allPass = false;
+  } else {
+    results.max_distance = true;
+  }
+
+  return { passed: allPass, constraints: results };
+}
+
+// ----------------------------------------------------------------------------
+// คำนวณคะแนน soft constraints ของเส้นทาง
+// ----------------------------------------------------------------------------
+// pathM  : เส้นทางเป็นจุดต่อเนื่องในหน่วยเมตร
+// hazards : รายการพิกัดพื้นที่น้ำท่วม
+// weights : น้ำหนักที่ผู้ใช้เลือกจาก slider
+// ผลลัพธ์จะให้คะแนนแต่ละปัจจัย และคะแนนรวมสำหรับการเปรียบเทียบ
+function scoreSoftConstraints(pathM, hazards, weights) {
+  if (!weights) weights = { shortest_distance: 0.40, lowest_risk: 0.35, fastest_time: 0.15, max_safety: 0.10 };
+  if (!pathM || pathM.length < 2) return { scores: {}, total: 0 };
+
+  let totalDist = 0, totalRisk = 0;
+  const len = pathM.length;
+
+  for (let i = 0; i < len - 1; i++) {
+    const seg = Math.hypot(pathM[i+1].x - pathM[i].x, pathM[i+1].y - pathM[i].y);
+    totalDist += seg;
+    totalRisk += totalDanger(pathM[i].x, pathM[i].y, hazards);
+  }
+  // FIX #3: totalRisk is accumulated over (len - 1) segments (the loop above runs from
+  // i=0 to len-2), so averaging over `len` slightly understated avgRisk. Divide by the
+  // actual number of sampled points instead, guarding against a 1-point path.
+  const avgRisk = totalRisk / Math.max(1, len - 1);
+  let maxDanger = 0;
+  for (const p of pathM) { const d = totalDanger(p.x, p.y, hazards); if (d > maxDanger) maxDanger = d; }
+
+  const scores = {
+    shortest_distance: Math.max(0, 1 - totalDist / 5000),
+    lowest_risk: 1 - avgRisk,
+    fastest_time: Math.max(0, 1 - len / 200),
+    max_safety: 1 - maxDanger,
+  };
+  let total = 0;
+  for (const k of Object.keys(weights)) total += (scores[k] || 0) * (weights[k] || 0);
+  return { scores, weights, total: Math.round(total * 10000) / 10000, details: { totalDist: Math.round(totalDist*100)/100, avgRisk: Math.round(avgRisk*10000)/10000, maxDanger: Math.round(maxDanger*10000)/10000, nodes: len } };
+}
+
+// =====================================================================
+// 11. ALGORITHMS (async with animation)
+// =====================================================================
+
+// ---- A* Search ----
+// A* เป็น search algorithm ที่ใช้ f(n)=g(n)+h(n)
+// g(n) = ต้นทุนจริงจากจุดเริ่มต้น
+// h(n) = ค่าประมาณเหลือไปยังเป้าหมาย
+// ฟังก์ชันนี้สร้างกริดรอบพื้นที่ที่ต้องเดิน และเลี่ยงจุดอันตรายตามเงื่อนไข
+async function astarSearch(startM, goalM, hazards, gridStep) {
+  const b = computeBounds();
+  const snap = v => Math.round(v / gridStep);
+  const unsnap = g => g * gridStep;
+  const key = (x,y) => `${x},${y}`;
+  const sg = {x:snap(startM.x),y:snap(startM.y)};
+  const gg = {x:snap(goalM.x),y:snap(goalM.y)};
+  const DIRS = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]];
+
+  const heuristicType = document.getElementById('heuristicType').value;
+  const h = (gx, gy) => {
+    const mx = unsnap(gx), my = unsnap(gy);
+    if (heuristicType === 'manhattan') {
+      return Math.abs(mx - goalM.x) + Math.abs(my - goalM.y);
+    }
+    return Math.hypot(mx - goalM.x, my - goalM.y);
+  };
+
+  const dangerThresh = getDangerThreshold();
+
+  const openSet = [];
+  heapPush(openSet, {f:h(sg.x, sg.y),g:0,p:sg});
+  const cameFrom = {}; const gScore = {};
+  gScore[key(sg.x,sg.y)] = 0;
+  const visited = new Set();
+  let nodeCount = 0, frameCount = 0;
+
+  while (openSet.length > 0) {
+    const cur = heapPop(openSet);
+    const ck = key(cur.p.x, cur.p.y);
+    if (visited.has(ck)) continue;
+    visited.add(ck); nodeCount++;
+
+    if (!skipRequested) {
+      const [lat,lng] = toLatLng(unsnap(cur.p.x), unsnap(cur.p.y));
+      drawAnimDot(lat, lng, '#38bdf8', 3, 0.35); frameCount++;
+      if (frameCount % 3 === 0) { showHud('A* Search', `${nodeCount} nodes`, `Open: ${openSet.length} | Visited: ${visited.size}`); await sleep(getAnimDelay()); }
+    }
+    if (cur.p.x === gg.x && cur.p.y === gg.y) break;
+    const cx = unsnap(cur.p.x), cy = unsnap(cur.p.y);
+    for (const [dx,dy] of DIRS) {
+      const np = {x:cur.p.x+dx, y:cur.p.y+dy};
+      const nx = unsnap(np.x), ny = unsnap(np.y);
+      if (nx<b.minX||nx>b.maxX||ny<b.minY||ny>b.maxY) continue;
+
+      if (!isSafeMove(unsnap, cur.p.x, cur.p.y, dx, dy, hazards, dangerThresh)) continue;
+
+      const nk = key(np.x,np.y);
+      const move = movementCost(cx,cy,nx,ny,hazards);
+      const newG = cur.g + move;
+      if (gScore[nk]===undefined || newG < gScore[nk]) { gScore[nk]=newG; cameFrom[nk]=ck; heapPush(openSet,{f:newG+h(np.x,np.y),g:newG,p:np}); }
+    }
+  }
+  const pathGrid = []; let node = gg;
+  while (key(node.x,node.y) in cameFrom) { pathGrid.push(node); const pStr=cameFrom[key(node.x,node.y)]; const parts=pStr.split(','); node={x:parseInt(parts[0]),y:parseInt(parts[1])}; }
+  pathGrid.push(sg); pathGrid.reverse();
+  const pathM = [{x:startM.x,y:startM.y}];
+  for (const g of pathGrid) pathM.push({x:unsnap(g.x),y:unsnap(g.y)});
+  pathM.push({x:goalM.x,y:goalM.y});
+  const dedup=[pathM[0]]; for(let i=1;i<pathM.length;i++){const last=dedup[dedup.length-1];if(Math.abs(pathM[i].x-last.x)>0.01||Math.abs(pathM[i].y-last.y)>0.01)dedup.push(pathM[i]);}
+  let cost=0; for(let i=0;i<dedup.length-1;i++) cost+=movementCost(dedup[i].x,dedup[i].y,dedup[i+1].x,dedup[i+1].y,hazards);
+  return {path:dedup,cost,algoName:'A* Search',extra:`Nodes explored: ${nodeCount}`};
+}
+
+// ---- BFS ----
+// BFS สำรวจจากจุดเริ่มต้นเป็นชั้น ๆ
+// จะหาเส้นทางที่ใช้ก้าวน้อยที่สุดในกริดถ้าทุกก้าวมีค่าเท่ากัน
+// เหมาะสำหรับเส้นทางแบบ grid ที่ไม่เน้น heuristic
+async function bfsSearch(startM, goalM, hazards, gridStep) {
+  const b = computeBounds();
+  const snap=v=>Math.round(v/gridStep), unsnap=g=>g*gridStep, key=(x,y)=>`${x},${y}`;
+  const sg={x:snap(startM.x),y:snap(startM.y)}, gg={x:snap(goalM.x),y:snap(goalM.y)};
+  const DIRS=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]];
+  const queue=[[sg.x,sg.y]]; const cameFrom={}; const visited=new Set();
+  visited.add(key(sg.x,sg.y)); let nodeCount=0, found=false;
+
+  const dangerThresh = getDangerThreshold();
+
+  while(queue.length>0){
+    const [cx,cy]=queue.shift(); nodeCount++;
+    if(!skipRequested){ const [lat,lng]=toLatLng(unsnap(cx),unsnap(cy)); drawAnimDot(lat,lng,'#38bdf8',3,0.35); showHud('BFS',`Depth: ~${Math.round(nodeCount/2)}`, `Queue: ${queue.length} | Visited: ${visited.size}`); await sleep(getAnimDelay()*0.5); }
+    if(cx===gg.x&&cy===gg.y){found=true;break;}
+    for(const[dx,dy]of DIRS){
+      const nx=cx+dx,ny=cy+dy; const nmx=unsnap(nx),nmy=unsnap(ny);
+      if(nmx<b.minX||nmx>b.maxX||nmy<b.minY||nmy>b.maxY)continue;
+      const nk=key(nx,ny); if(visited.has(nk))continue;
+
+      if(!isSafeMove(unsnap, cx, cy, dx, dy, hazards, dangerThresh))continue;
+
+      visited.add(nk); cameFrom[nk]=key(cx,cy); queue.push([nx,ny]);
+    }
+  }
+  const pathGrid=[];
+  if(found){let node=gg;while(node!==null){pathGrid.push(node);const nk=key(node.x,node.y);const prev=cameFrom[nk];if(!prev)break;const parts=prev.split(',');node={x:parseInt(parts[0]),y:parseInt(parts[1])};}pathGrid.reverse();}else{let bestNode=null,bestDist=Infinity;for(const k of visited){const parts=k.split(',');const px=parseInt(parts[0]),py=parseInt(parts[1]);const d=Math.hypot(px-gg.x,py-gg.y);if(d<bestDist){bestDist=d;bestNode={x:px,y:py};}}if(bestNode&&bestDist<Infinity){let node=bestNode;while(node!==null){pathGrid.push(node);const nk=key(node.x,node.y);const prev=cameFrom[nk];if(!prev)break;const parts=prev.split(',');node={x:parseInt(parts[0]),y:parseInt(parts[1])};}pathGrid.reverse();}else{pathGrid.push(sg);}}
+  const pathM=[{x:startM.x,y:startM.y}]; for(const g of pathGrid) pathM.push({x:unsnap(g.x),y:unsnap(g.y)});
+  const dedup=[pathM[0]]; for(let i=1;i<pathM.length;i++){const last=dedup[dedup.length-1];if(Math.abs(pathM[i].x-last.x)>0.01||Math.abs(pathM[i].y-last.y)>0.01)dedup.push(pathM[i]);}
+  let cost=0; for(let i=0;i<dedup.length-1;i++) cost+=movementCost(dedup[i].x,dedup[i].y,dedup[i+1].x,dedup[i+1].y,hazards);
+  return {path:dedup,cost,algoName:'BFS (Breadth-First Search)',extra:`Nodes: ${nodeCount} | Found: ${found}`};
+}
+
+// ---- Greedy Best-First ----
+// Greedy search เลือกจุดที่ดูใกล้เป้าหมายที่สุดเสมอ
+// จึงมักเร็วกว่าตัวอื่น แต่ไม่รับประกันว่าได้คำตอบที่ดีที่สุด
+async function greedySearch(startM, goalM, hazards, gridStep) {
+  const b = computeBounds();
+  const snap=v=>Math.round(v/gridStep), unsnap=g=>g*gridStep, key=(x,y)=>`${x},${y}`;
+  const sg={x:snap(startM.x),y:snap(startM.y)}, gg={x:snap(goalM.x),y:snap(goalM.y)};
+  const DIRS=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]];
+
+  const heuristicType = document.getElementById('heuristicType').value;
+  const h = (gx, gy) => {
+    const mx = unsnap(gx), my = unsnap(gy);
+    if (heuristicType === 'manhattan') {
+      return Math.abs(mx - goalM.x) + Math.abs(my - goalM.y);
+    }
+    return Math.hypot(mx - goalM.x, my - goalM.y);
+  };
+
+  const dangerThresh = getDangerThreshold();
+
+  let counter=0; const heap=[]; const openSet=new Set(); const closed=new Set(); const cameFrom={};
+  heapPush(heap,{f:h(sg.x,sg.y),p:sg}); openSet.add(key(sg.x,sg.y));
+  let nodeCount=0,found=false;
+
+  while(heap.length>0){
+    const cur=heapPop(heap); const ck=key(cur.p.x,cur.p.y);
+    if(closed.has(ck))continue; closed.add(ck); openSet.delete(ck); nodeCount++;
+    if(!skipRequested){const[lat,lng]=toLatLng(unsnap(cur.p.x),unsnap(cur.p.y));drawAnimDot(lat,lng,'#f59e0b',4,0.6);showHud('Greedy Best-First',`${nodeCount} nodes`);await sleep(getAnimDelay()*0.5);}
+    if(cur.p.x===gg.x&&cur.p.y===gg.y){found=true;break;}
+    for(const[dx,dy]of DIRS){
+      const nx=cur.p.x+dx,ny=cur.p.y+dy; const nmx=unsnap(nx),nmy=unsnap(ny);
+      if(nmx<b.minX||nmx>b.maxX||nmy<b.minY||nmy>b.maxY)continue;
+      
+      if(!isSafeMove(unsnap, cur.p.x, cur.p.y, dx, dy, hazards, dangerThresh))continue;
+
+      const nk=key(nx,ny); if(closed.has(nk)||openSet.has(nk))continue;
+      cameFrom[nk]=ck; counter++; heapPush(heap,{f:h(nx,ny),p:{x:nx,y:ny}}); openSet.add(nk);
+    }
+  }
+  const pathGrid=[];
+  if(found){let node=gg;while(node!==null){pathGrid.push(node);const nk=key(node.x,node.y);const prev=cameFrom[nk];if(!prev)break;const parts=prev.split(',');node={x:parseInt(parts[0]),y:parseInt(parts[1])};}pathGrid.reverse();}else{let bestNode=null,bestDist=Infinity;for(const k of closed){const parts=k.split(',');const px=parseInt(parts[0]),py=parseInt(parts[1]);const d=Math.hypot(px-gg.x,py-gg.y);if(d<bestDist){bestDist=d;bestNode={x:px,y:py};}}if(bestNode&&bestDist<Infinity){let node=bestNode;while(node!==null){pathGrid.push(node);const nk=key(node.x,node.y);const prev=cameFrom[nk];if(!prev)break;const parts=prev.split(',');node={x:parseInt(parts[0]),y:parseInt(parts[1])};}pathGrid.reverse();}else{pathGrid.push(sg);}}
+  const pathM=[{x:startM.x,y:startM.y}]; for(const g of pathGrid) pathM.push({x:unsnap(g.x),y:unsnap(g.y)});
+  const dedup=[pathM[0]]; for(let i=1;i<pathM.length;i++){const last=dedup[dedup.length-1];if(Math.abs(pathM[i].x-last.x)>0.01||Math.abs(pathM[i].y-last.y)>0.01)dedup.push(pathM[i]);}
+  let cost=0; for(let i=0;i<dedup.length-1;i++) cost+=movementCost(dedup[i].x,dedup[i].y,dedup[i+1].x,dedup[i+1].y,hazards);
+  return {path:dedup,cost,algoName:'Greedy Best-First Search',extra:`Nodes: ${nodeCount} | Found: ${found}`};
+}
+
+// ---- Segment Safety Check (intermediate point sampling) ----
+function isSegmentSafe(p1, p2, hazards, thresh) {
+  const dist = Math.hypot(p2.x-p1.x, p2.y-p1.y);
+  const steps = Math.max(2, Math.ceil(dist / 15));
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    if (totalDanger(p1.x+(p2.x-p1.x)*t, p1.y+(p2.y-p1.y)*t, hazards) > thresh) return false;
+  }
+  return true;
+}
+
+// ---- Path Simplification (Douglas-Peucker, hazard-aware) ----
+function simplifyPath(pts, epsilon, hazards, thresh) {
+  if (pts.length <= 2) return pts;
+  let maxDist = 0, maxIdx = 0;
+  const [sx,sy] = [pts[0].x, pts[0].y];
+  const [ex,ey] = [pts[pts.length-1].x, pts[pts.length-1].y];
+  const lenSq = (ex-sx)**2 + (ey-sy)**2;
+  for (let i = 1; i < pts.length - 1; i++) {
+    let d;
+    if (lenSq === 0) { d = Math.hypot(pts[i].x-sx, pts[i].y-sy); }
+    else {
+      const t = Math.max(0, Math.min(1, ((pts[i].x-sx)*(ex-sx)+(pts[i].y-sy)*(ey-sy))/lenSq));
+      d = Math.hypot(pts[i].x-(sx+t*(ex-sx)), pts[i].y-(sy+t*(ey-sy)));
+    }
+    if (d > maxDist) { maxDist = d; maxIdx = i; }
+  }
+  if (maxDist > epsilon) {
+    const left = simplifyPath(pts.slice(0, maxIdx+1), epsilon, hazards, thresh);
+    const right = simplifyPath(pts.slice(maxIdx), epsilon, hazards, thresh);
+    return left.slice(0,-1).concat(right);
+  }
+  if (hazards && thresh !== undefined && !isSegmentSafe(pts[0], pts[pts.length-1], hazards, thresh)) {
+    return pts;
+  }
+  return [pts[0], pts[pts.length-1]];
+}
+
+// ---- Simulated Annealing ----
+// Optimization แบบสุ่มที่ยอมรับการเปลี่ยนไปทางแย่ลงบ้าง
+// เพื่อหลบหลีก local minimum แล้วหาทางที่ดีกว่าในระยะยาว
+//
+// FIX #2: previously this only enforced the danger threshold on the FINAL segment that
+// closes the path to the goal (via isSegmentSafe at the very end). Every candidate step
+// taken *during* the annealing walk was accepted purely on the objective value, so the
+// walk could freely cut straight through a hazard circle while A*/BFS/Backtracking/AC-3/
+// GA would never be allowed to. That made "Hard Constraints" mean different things
+// depending on which algorithm was selected. Now a candidate cell that violates the
+// current danger threshold is rejected outright (treated like a rejected SA move) so the
+// same hard limit applies no matter which algorithm is running.
+async function simulatedAnnealing(startM, goalM, hazards) {
+  const b = computeBounds();
+  const stepSize = 25;
+  const maxIter = 2500;
+  const dangerThresh = getDangerThreshold();
+
+  const obj = (x, y) => {
+    const distGoal = Math.hypot(x - goalM.x, y - goalM.y);
+    const danger = totalDanger(x, y, hazards);
+    return distGoal + danger * 2000;
+  };
+
+  let cx = startM.x, cy = startM.y;
+  let bestX = cx, bestY = cy, bestVal = obj(cx, cy);
+  const path = [{x: cx, y: cy}];
+  let T = 100, cooling = 0.995;
+  let accepted = 0, rejected = 0;
+  let reached = false;
+
+  for (let iter = 0; iter < maxIter && T > 0.01; iter++) {
+    const angle = Math.random() * 2 * Math.PI;
+    const dist = stepSize * (0.3 + Math.random() * 0.7);
+    let nx = Math.max(b.minX, Math.min(b.maxX, cx + Math.cos(angle) * dist));
+    let ny = Math.max(b.minY, Math.min(b.maxY, cy + Math.sin(angle) * dist));
+
+    // Hard constraint: never step into a cell above the allowed danger threshold,
+    // regardless of how good the objective value would otherwise look.
+    if (totalDanger(nx, ny, hazards) > dangerThresh) {
+      rejected++;
+      T *= cooling;
+      continue;
+    }
+
+    const curVal = obj(cx, cy);
+    const newVal = obj(nx, ny);
+    const deltaE = newVal - curVal;
+
+    if (deltaE < 0 || (T > 1e-6 && Math.random() < Math.exp(-deltaE / T))) {
+      cx = nx; cy = ny;
+      path.push({x: cx, y: cy});
+      accepted++;
+      if (newVal < bestVal) { bestX = cx; bestY = cy; bestVal = newVal; }
+      if (Math.hypot(cx - goalM.x, cy - goalM.y) < stepSize) { reached = true; break; }
+      if (!skipRequested && iter % 5 === 0) {
+        const [lat, lng] = toLatLng(cx, cy);
+        drawAnimDot(lat, lng, deltaE < 0 ? '#34d399' : '#f59e0b', 3, 0.4);
+        showHud('Simulated Annealing', `T=${T.toFixed(2)} | Step ${iter}/${maxIter}`, `${deltaE < 0 ? '✓ Better' : '⚡ Worse'} | Dist: ${Math.round(newVal)}`);
+        await sleep(getAnimDelay());
+      }
+    } else {
+      rejected++;
+    }
+    T *= cooling;
+  }
+
+  if (reached) {
+    path.push({x: goalM.x, y: goalM.y});
+  } else if (isSegmentSafe({x: cx, y: cy}, {x: goalM.x, y: goalM.y}, hazards, dangerThresh)) {
+    path.push({x: goalM.x, y: goalM.y});
+  }
+
+  const simplified = simplifyPath(path, 15, hazards, dangerThresh);
+  let cost = 0;
+  for (let i = 0; i < simplified.length - 1; i++) cost += movementCost(simplified[i].x, simplified[i].y, simplified[i+1].x, simplified[i+1].y, hazards);
+  return {path: simplified, cost, algoName: 'Simulated Annealing', extra: `Accepted: ${accepted} | Rejected: ${rejected} | ${reached ? 'Reached goal' : 'Best approx'}`};
+}
+
+// ---- Hill Climbing (Steepest) — with sideways moves ----
+// Local search ที่เลือกทิศทางที่ลดค่า objective มากที่สุด
+// สนับสนุนการเคลื่อนที่แบบ sideways เพื่อหลีกเลี่ยงการติด local minimum แบบง่าย
+//
+// FIX #2 (same rationale as Simulated Annealing above): candidate neighbor cells that
+// exceed the current danger threshold are now filtered out before picking the steepest
+// descent direction, instead of only being checked on the final segment into the goal.
+async function hillClimbing(startM, goalM, hazards) {
+  const b = computeBounds();
+  const step = 20;
+  const dangerThresh = getDangerThreshold();
+  const DIRS = [[step,0],[-step,0],[0,step],[0,-step],[step,step],[-step,step],[step,-step],[-step,-step]];
+  const obj = (x,y) => {
+    const distGoal = Math.hypot(x - goalM.x, y - goalM.y);
+    const danger = totalDanger(x, y, hazards);
+    return distGoal + danger * 2000;
+  };
+
+  let cx = startM.x, cy = startM.y;
+  let curVal = obj(cx, cy);
+  const path = [{x: cx, y: cy}];
+  let maxIter = 600;
+  let sidewaysMax = 40;
+  let sidewaysCount = 0;
+  let stuck = false;
+  let reached = false;
+
+  for (let iter = 0; iter < maxIter; iter++) {
+    const distToGoal = Math.hypot(cx - goalM.x, cy - goalM.y);
+    if (distToGoal < step * 1.5) {
+      reached = true;
+      break;
+    }
+
+    const nbrs = DIRS.map(d => ({
+      x: Math.max(b.minX, Math.min(b.maxX, cx + d[0])),
+      y: Math.max(b.minY, Math.min(b.maxY, cy + d[1]))
+    })).filter(p => totalDanger(p.x, p.y, hazards) <= dangerThresh);
+
+    if (nbrs.length === 0) { stuck = true; break; }
+
+    const best = nbrs.reduce((a, b2) => obj(a.x, a.y) < obj(b2.x, b2.y) ? a : b2);
+    const bestVal = obj(best.x, best.y);
+
+    if (bestVal < curVal) {
+      cx = best.x; cy = best.y; curVal = bestVal;
+      sidewaysCount = 0;
+    } else if (bestVal <= curVal + 0.5) {
+      cx = best.x; cy = best.y; curVal = bestVal;
+      sidewaysCount++;
+      if (sidewaysCount >= sidewaysMax) { stuck = true; break; }
+    } else {
+      stuck = true;
+      break;
+    }
+
+    path.push({x: cx, y: cy});
+    if (!skipRequested && iter % 3 === 0) {
+      const [lat, lng] = toLatLng(cx, cy);
+      drawAnimDot(lat, lng, '#a78bfa', 4, 0.5);
+      showHud('Hill Climbing (Steepest)', `Step ${iter} | Dist: ${Math.round(curVal)}`, `Sideways: ${sidewaysCount}/${sidewaysMax}`);
+      await sleep(getAnimDelay());
+    }
+  }
+
+  if (stuck && !reached && !skipRequested) {
+    const [lat, lng] = toLatLng(cx, cy);
+    drawAnimDot(lat, lng, '#ef4444', 7, 0.7);
+    showHud('Hill Climbing (Steepest)', '⚠ LOCAL MINIMUM!', `Stuck at dist=${Math.round(curVal)}`);
+    await sleep(getAnimDelay() * 3);
+  }
+
+  if (reached) {
+    path.push({x: goalM.x, y: goalM.y});
+  } else if (isSegmentSafe({x: cx, y: cy}, {x: goalM.x, y: goalM.y}, hazards, dangerThresh)) {
+    path.push({x: goalM.x, y: goalM.y});
+  }
+
+  const simplified = simplifyPath(path, 15, hazards, dangerThresh);
+  let cost = 0;
+  for (let i = 0; i < simplified.length - 1; i++) cost += movementCost(simplified[i].x, simplified[i].y, simplified[i+1].x, simplified[i+1].y, hazards);
+  return {path: simplified, cost, algoName: 'Hill Climbing (Steepest)', extra: reached ? 'Reached goal' : `Stuck at local min | Sideways: ${sidewaysCount}`};
+}
+
+// ---- Genetic Algorithm ----
+// สร้างประชากรของเส้นทาง แล้วใช้ crossover + mutation
+// เพื่อค้นหาวิธีการเดินทางที่ดีที่สุดภายใต้เงื่อนไขความปลอดภัย
+async function geneticAlgorithm(startM, goalM, hazards, gridStep) {
+  const b = computeBounds(); const STEP=gridStep;
+  // FIX: GENES/GENS used to be fixed constants (50 / 80). A genome of 50 genes can only
+  // ever cover 50 * gridStep meters of straight-line movement — if the survivor and exit
+  // are farther apart than that (very likely with a wide gridStep or a large map), the GA
+  // could NEVER reach the goal no matter how many generations it ran, because the genome
+  // simply had no room left to keep stepping. Both are now sized off the actual
+  // straight-line distance between start and goal, with a 1.6x margin so there's still
+  // slack to route around hazards, and capped so a huge map doesn't blow up runtime/animation.
+  const POP=40, MUT=0.15;
+  const distStartGoal = Math.hypot(goalM.x - startM.x, goalM.y - startM.y);
+  const GENES = Math.min(400, Math.max(50, Math.ceil((distStartGoal * 1.6) / STEP)));
+  const GENS  = Math.min(250, Math.max(80, Math.ceil(GENES * 1.5)));
+  const dangerThresh = getDangerThreshold();
+  const DIRS=[[STEP,0],[-STEP,0],[0,STEP],[0,-STEP],[STEP,STEP],[-STEP,STEP],[STEP,-STEP],[-STEP,-STEP]];
+  const follow=(genome)=>{let cx=startM.x,cy=startM.y;const cells=[{x:cx,y:cy}];for(const g of genome){const[dx,dy]=DIRS[g];let nx=cx+dx,ny=cy+dy;nx=Math.max(b.minX,Math.min(b.maxX,nx));ny=Math.max(b.minY,Math.min(b.maxY,ny));let safe=true;if(dx!==0&&dy!==0){if(totalDanger(cx+dx,cy,hazards)>dangerThresh||totalDanger(cx,cy+dy,hazards)>dangerThresh||totalDanger(nx,ny,hazards)>dangerThresh)safe=false;}else{if(totalDanger(nx,ny,hazards)>dangerThresh)safe=false;}if(safe){cx=nx;cy=ny;}cells.push({x:cx,y:cy});}return{end:{x:cx,y:cy},cells};};
+  const fitness=(genome)=>{const{end,cells}=follow(genome);const dist=Math.hypot(end.x-goalM.x,end.y-goalM.y);let pd=0;for(const c of cells)pd+=totalDanger(c.x,c.y,hazards);let s=50000-dist-Math.pow(pd,2)*500;if(dist<STEP*2)s+=20000;return s;};
+  const rand=()=>Array.from({length:GENES},()=>Math.floor(Math.random()*8));
+  let pop=Array.from({length:POP},()=>rand());
+  for(let gen=0;gen<GENS;gen++){pop.sort((a,b)=>fitness(b)-fitness(a));const{end,cells}=follow(pop[0]);const d=Math.hypot(end.x-goalM.x,end.y-goalM.y);if(!skipRequested&&gen%2===0){animLayers.clearLayers();const ll=cells.map(c=>toLatLng(c.x,c.y));drawAnimLine(ll,'#fbbf24',3,0.6);showHud('Genetic Algorithm',`Gen ${gen+1}/${GENS}`);await sleep(getAnimDelay()*2);}if(d<STEP)break;const parents=pop.slice(0,POP>>1);const children=[...parents];while(children.length<POP){const p1=parents[Math.floor(Math.random()*parents.length)],p2=parents[Math.floor(Math.random()*parents.length)];const pt=1+Math.floor(Math.random()*(GENES-1));const child=[...p1.slice(0,pt),...p2.slice(pt)];for(let i=0;i<child.length;i++)if(Math.random()<MUT)child[i]=Math.floor(Math.random()*8);children.push(child);}pop=children;}
+  pop.sort((a,b)=>fitness(b)-fitness(a));const{cells}=follow(pop[0]);const dedup=[cells[0]];for(let i=1;i<cells.length;i++){const last=dedup[dedup.length-1];if(Math.abs(cells[i].x-last.x)>0.01||Math.abs(cells[i].y-last.y)>0.01)dedup.push(cells[i]);}
+  const lastCell=dedup[dedup.length-1];
+  const distToGoal = Math.hypot(lastCell.x-goalM.x,lastCell.y-goalM.y);
+  // Only snap the final segment onto the goal if it's both close AND safe to walk —
+  // matches how simulatedAnnealing()/hillClimbing() close their paths, so GA doesn't
+  // silently draw a "reached" path that actually cuts through a hazard at the very end.
+  if (distToGoal < STEP*3 && isSegmentSafe(lastCell, {x:goalM.x,y:goalM.y}, hazards, dangerThresh)) {
+    dedup.push({x:goalM.x,y:goalM.y});
+  }
+  let cost=0; for(let i=0;i<dedup.length-1;i++) cost+=movementCost(dedup[i].x,dedup[i].y,dedup[i+1].x,dedup[i+1].y,hazards);
+  const reachedGoal = Math.hypot(dedup[dedup.length-1].x-goalM.x, dedup[dedup.length-1].y-goalM.y) < 1;
+  return {path:dedup,cost,algoName:'Genetic Algorithm',extra:`Pop: ${POP} | Genes: ${GENES} | Gens: ${GENS} | ${reachedGoal ? 'Reached goal' : 'Best approx (did not reach goal)'}`};
+}
+
+// ---- Backtracking Search ----
+// เดินลึกพร้อมย้อนกลับเมื่อเจอทางตัน
+// รับประกันว่าจะเจอเส้นทางถ้ามี แต่บางครั้งอาจทำงานช้าเมื่อพื้นที่กว้าง
+async function backtrackingSearch(startM, goalM, hazards, gridStep) {
+  const b = computeBounds(); const snap=v=>Math.round(v/gridStep), unsnap=g=>g*gridStep, key=(x,y)=>`${x},${y}`;
+  const sg={x:snap(startM.x),y:snap(startM.y)},gg={x:snap(goalM.x),y:snap(goalM.y)}; const DIRS=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]];
+  const dangerThresh = getDangerThreshold();
+  const visited=new Set(); let foundPath=null,stepCount=0,backtrackCount=0;
+  async function dfs(gx,gy,path,depth){if(foundPath||depth>600)return;const mx=unsnap(gx),my=unsnap(gy);if(mx<b.minX||mx>b.maxX||my<b.minY||my>b.maxY)return;const k=key(gx,gy);if(visited.has(k))return;if(totalDanger(mx,my,hazards)>dangerThresh)return;visited.add(k);path.push({x:mx,y:my});stepCount++;if(!skipRequested&&stepCount%4===0){const[lat,lng]=toLatLng(mx,my);drawAnimDot(lat,lng,'#38bdf8',3,0.3);showHud('Backtracking',`Step ${stepCount} | Depth: ${depth}`);await sleep(getAnimDelay()*0.7);}if(gx===gg.x&&gy===gg.y){foundPath=[...path];return;}const sorted=[...DIRS].sort((a,b2)=>(Math.abs(gx+a[0]-gg.x)+Math.abs(gy+a[1]-gg.y))-(Math.abs(gx+b2[0]-gg.x)+Math.abs(gy+b2[1]-gg.y)));for(const[dx,dy]of sorted){if(!isSafeMove(unsnap,gx,gy,dx,dy,hazards,dangerThresh))continue;await dfs(gx+dx,gy+dy,path,depth+1);if(foundPath)return;}path.pop();backtrackCount++;if(!skipRequested&&backtrackCount%6===0){const[lat,lng]=toLatLng(mx,my);drawAnimDot(lat,lng,'#f87171',4,0.5);showHud('Backtracking',`⬅ Backtrack #${backtrackCount}`,`From (${gx},${gy}) | Depth: ${depth}`);await sleep(getAnimDelay()*0.7);}}
+  await dfs(sg.x,sg.y,[],0);
+  if(!foundPath) foundPath=[{x:unsnap(sg.x),y:unsnap(sg.y)}];
+  const finalPath=[{x:startM.x,y:startM.y}]; for(const p of foundPath){const last=finalPath[finalPath.length-1];if(Math.abs(p.x-last.x)>0.01||Math.abs(p.y-last.y)>0.01)finalPath.push(p);}finalPath.push({x:goalM.x,y:goalM.y});
+  let cost=0; for(let i=0;i<finalPath.length-1;i++) cost+=movementCost(finalPath[i].x,finalPath[i].y,finalPath[i+1].x,finalPath[i+1].y,hazards);
+  return {path:finalPath,cost,algoName:'Backtracking Search',extra:`Steps: ${stepCount} | Backtracks: ${backtrackCount}`};
+}
+
+// ---- Arc Consistency (AC-3) ----
+// ใช้แนวคิด constraint propagation เพื่อลด domain ของตำแหน่งก่อน
+// แล้วจึงค้นหาเส้นทางเฉพาะในโดเมนที่เป็นไปได้เท่านั้น
+async function arcConsistency(startM, goalM, hazards, gridStep) {
+  const b = computeBounds(); const snap=v=>Math.round(v/gridStep), unsnap=g=>g*gridStep, key=(x,y)=>`${x},${y}`;
+  const sg={x:snap(startM.x),y:snap(startM.y)},gg={x:snap(goalM.x),y:snap(goalM.y)}; const DIRS=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]];
+  const dangerThresh = getDangerThreshold();
+  const gMinX=snap(b.minX),gMaxX=snap(b.maxX),gMinY=snap(b.minY),gMaxY=snap(b.maxY);
+  const reachable=new Set(); const q=[[gg.x,gg.y]]; reachable.add(key(gg.x,gg.y));
+  while(q.length>0){const[cx,cy]=q.shift();for(const[dx,dy]of DIRS){const nx=cx+dx,ny=cy+dy;if(nx<gMinX||nx>gMaxX||ny<gMinY||ny>gMaxY)continue;const k=key(nx,ny);if(reachable.has(k))continue;if(!isSafeMove(unsnap,cx,cy,dx,dy,hazards,dangerThresh))continue;reachable.add(k);q.push([nx,ny]);if(!skipRequested){const mx=unsnap(nx),my=unsnap(ny);const[lat,lng]=toLatLng(mx,my);drawAnimDot(lat,lng,'#34d399',3,0.25);showHud('AC-3 Phase 1',`BFS backward... ${reachable.size} cells`,`Expanding from goal`);await sleep(getAnimDelay()*0.3);}}}
+  let totalCells=0; for(let gx=gMinX;gx<=gMaxX;gx++){for(let gy=gMinY;gy<=gMaxY;gy++){const mx=unsnap(gx),my=unsnap(gy);if(totalDanger(mx,my,hazards)<=dangerThresh)totalCells++;}}
+  const prunedCount=totalCells-reachable.size;
+  if(!skipRequested){showHud('AC-3 Phase 1',`\u2702 Pruned ${prunedCount} cells!`,`Reachable: ${reachable.size} cells`);await sleep(getAnimDelay()*5);showHud('AC-3 Phase 2','DFS on remaining domain...','');await sleep(getAnimDelay());}
+  const visited=new Set(); let foundPath=null,stepCount=0;
+  async function dfs(gx,gy,path,depth){if(foundPath||depth>600)return;const k=key(gx,gy);if(!reachable.has(k)||visited.has(k))return;visited.add(k);const mx=unsnap(gx),my=unsnap(gy);path.push({x:mx,y:my});stepCount++;if(!skipRequested&&stepCount%4===0){const[lat,lng]=toLatLng(mx,my);drawAnimDot(lat,lng,'#a78bfa',4,0.5);showHud('AC-3 Phase 2',`DFS Step ${stepCount} | Depth: ${depth}`);await sleep(getAnimDelay()*0.5);}if(gx===gg.x&&gy===gg.y){foundPath=[...path];return;}const sorted=[...DIRS].sort((a,b2)=>(Math.abs(gx+a[0]-gg.x)+Math.abs(gy+a[1]-gg.y))-(Math.abs(gx+b2[0]-gg.x)+Math.abs(gy+b2[1]-gg.y)));for(const[dx,dy]of sorted){await dfs(gx+dx,gy+dy,path,depth+1);if(foundPath)return;}path.pop();}
+  await dfs(sg.x,sg.y,[],0);
+  if(!foundPath) foundPath=[{x:unsnap(sg.x),y:unsnap(sg.y)}];
+  const finalPath=[{x:startM.x,y:startM.y}]; for(const p of foundPath){const last=finalPath[finalPath.length-1];if(Math.abs(p.x-last.x)>0.01||Math.abs(p.y-last.y)>0.01)finalPath.push(p);}finalPath.push({x:goalM.x,y:goalM.y});
+  let cost=0; for(let i=0;i<finalPath.length-1;i++) cost+=movementCost(finalPath[i].x,finalPath[i].y,finalPath[i+1].x,finalPath[i+1].y,hazards);
+  return {path:finalPath,cost,algoName:'Arc Consistency (AC-3)',extra:`Pruned: ${prunedCount} | Reachable: ${reachable.size} | Steps: ${stepCount}`};
+}
+
+// =====================================================================
+// 12. MAIN RUNNER
+// =====================================================================
+async function runOptimization() {
+  if (isRunning) return;
+  routeLayers.clearLayers(); animLayers.clearLayers();
+  document.getElementById('resultsPanel').classList.remove('show');
+
+  if (state.survivors.length === 0) { alert('กรุณาวางผู้รอดชีวิตอย่างน้อย 1 คน'); return; }
+  if (!state.exit) { alert('กรุณาวางทางออก'); return; }
+
+  // Survivors are triaged by urgency; this run computes a route for the MOST URGENT
+  // survivor only (sortedSurvivors[0]). The results panel lists every survivor's urgency
+  // rank so the operator can re-run per survivor, but only one route is solved at a time.
+  const sortedSurvivors = [...state.survivors].sort((a,b)=>{const u=(x)=>(100-x.health)*0.5+(100-x.mobility)*0.3+(100-x.supplies)*0.2;return u(b)-u(a);});
+  const primarySurvivor = sortedSurvivors[0];
+
+  // CSP Hard Constraints check — must check the SAME survivor that will actually be routed.
+  const cspEnabled = document.getElementById('cspEnabled').checked;
+  if (cspEnabled) {
+    const hardResult = checkHardConstraints(primarySurvivor, state.exit, state.hazards);
+    if (!hardResult.passed) {
+      const failed = Object.entries(hardResult.constraints).filter(([,v])=>!v).map(([k])=>k).join(', ');
+      alert(`Hard Constraints ละเมิด: ${failed}\nกรุณาแก้ไขก่อนรัน`);
+      return;
+    }
+  }
+
+  isRunning = true; skipRequested = false;
+  document.getElementById('btnRun').disabled = true;
+  document.getElementById('btnSkip').style.display = 'block';
+
+  const algorithm = document.getElementById('algorithm').value;
+  const gridStep = parseInt(document.getElementById('gridStep').value);
+  const startM = toMeters(primarySurvivor.lat, primarySurvivor.lng);
+  const exitM = toMeters(state.exit.lat, state.exit.lng);
+
+  const t0 = performance.now();
+  let result;
+
+  try {
+    const algoDesc = document.getElementById('algorithm').options[document.getElementById('algorithm').selectedIndex].text;
+    showHud(algoDesc, 'Starting...', ALGO_DESCRIPTIONS[algorithm] || '');
+    await sleep(200);
+
+    switch (algorithm) {
+      case 'astar':    result = await astarSearch(startM, exitM, state.hazards, gridStep); break;
+      case 'bfs':      result = await bfsSearch(startM, exitM, state.hazards, gridStep); break;
+      case 'greedy':   result = await greedySearch(startM, exitM, state.hazards, gridStep); break;
+      case 'sa':       result = await simulatedAnnealing(startM, exitM, state.hazards); break;
+      case 'hc':       result = await hillClimbing(startM, exitM, state.hazards); break;
+      case 'ga':       result = await geneticAlgorithm(startM, exitM, state.hazards, gridStep); break;
+      case 'backtrack': result = await backtrackingSearch(startM, exitM, state.hazards, gridStep); break;
+      case 'ac3':      result = await arcConsistency(startM, exitM, state.hazards, gridStep); break;
+    }
+  } catch(err) { console.error(err); }
+
+  const elapsed = performance.now() - t0;
+  hideHud(); animLayers.clearLayers();
+
+  if (!result) { isRunning=false; document.getElementById('btnRun').disabled=false; document.getElementById('btnSkip').style.display='none'; return; }
+
+  const pathLatLngs = result.path.map(p => toLatLng(p.x, p.y));
+  renderRoute(pathLatLngs);
+
+  const dangers = result.path.map(p => totalDanger(p.x, p.y, state.hazards));
+  const maxDanger = Math.max(...dangers);
+  const avgDanger = dangers.reduce((a,b)=>a+b,0)/dangers.length;
+  const highDangerCount = dangers.filter(d=>d>0.4).length;
+
+  for (let i=0; i<result.path.length; i+=Math.max(1,Math.floor(result.path.length/20))) {
+    const d = dangers[i];
+    if (d>0.3) { const [lat,lng] = toLatLng(result.path[i].x, result.path[i].y);
+      L.circleMarker([lat,lng],{color:d>0.6?'#ef4444':'#f59e0b',fillColor:d>0.6?'#ef4444':'#f59e0b',fillOpacity:d*0.6,radius:4+d*6}).addTo(routeLayers).bindTooltip(`danger: ${(d*100).toFixed(0)}%`); }
+  }
+
+  // CSP Soft Scoring
+  let cspScore = null;
+  if (document.getElementById('cspScoring').checked) {
+    cspScore = scoreSoftConstraints(result.path, state.hazards, state.weights);
+  }
+
+  // CSP Hard Constraints — post-path check (previously computed nowhere: the
+  // "Avoid Extreme Danger" / "Max Distance Limit" toggles had no effect on the result).
+  let postConstraints = null;
+  if (cspEnabled) {
+    postConstraints = checkHardConstraintsPost(result.path, state.hazards);
+  }
+
+  showResults({
+    algoName: result.algoName, cost: result.cost, waypoints: result.path.length,
+    elapsed, maxDanger, avgDanger, highDangerCount,
+    exitDanger: totalDanger(exitM.x,exitM.y,state.hazards),
+    sortedSurvivors, extraInfo: result.extra || '', csp: cspScore,
+    postConstraints,
+  });
+
+  isRunning = false;
+  document.getElementById('btnRun').disabled = false;
+  document.getElementById('btnSkip').style.display = 'none';
+}
+
+// =====================================================================
+// 13. RESULTS DISPLAY
+// =====================================================================
+const SURVIVAL_TIPS = [
+  'อย่าเดินลุยน้ำที่ไหลเร็ว แม้ระดับตื้นก็พาล้มได้',
+  'มุ่งสู่พื้นที่สูง ห่างจากร่องน้ำและถนนต่ำ',
+  'ระวังสายไฟฟ้าที่ขาดตกลงในน้ำ',
+  'หากติดในอาคาร ขึ้นชั้นบนสุดและส่งสัญญาณ',
+  'อย่าขับรถฝ่าน้ำท่วม — น้ำ 60 ซม. พัดรถยนต์ได้',
+];
+
+function showResults(data) {
+  document.getElementById('resultsPanel').classList.add('show');
+  let html = `
+    <div class="result-card">
+      <h4>Algorithm: ${data.algoName}</h4>
+      <div class="stat"><span>เวลาคำนวณ</span><span>${(data.elapsed/1000).toFixed(3)} วินาที</span></div>
+      <div class="stat"><span>Waypoints</span><span>${data.waypoints} จุด</span></div>
+      <div class="stat"><span>Path Cost</span><span style="color:#38bdf8;font-weight:bold">${data.cost.toFixed(1)}</span></div>
+      ${data.extraInfo?`<div class="stat"><span>Detail</span><span style="font-size:10px">${data.extraInfo}</span></div>`:''}
+    </div>
+    <div class="result-card">
+      <h4>อันตรายตลอดเส้นทาง</h4>
+      <div class="stat"><span>Max Danger</span><span style="color:${data.maxDanger>0.6?'#ef4444':'#f59e0b'}">${(data.maxDanger*100).toFixed(1)}%</span></div>
+      <div class="stat"><span>Avg Danger</span><span>${(data.avgDanger*100).toFixed(1)}%</span></div>
+      <div class="stat"><span>จุดอันตรายสูง (&gt;40%)</span><span>${data.highDangerCount} จุด</span></div>
+      <div class="stat"><span>อันตรายที่ทางออก</span><span>${(data.exitDanger*100).toFixed(1)}%</span></div>
+    </div>
+    ${data.csp ? `<div class="result-card">
+      <h4>CSP Score: ${(data.csp.total * 100).toFixed(1)}%</h4>
+      ${Object.entries(data.csp.scores).map(([k,v]) => `<div class="stat"><span>${k}</span><span>${(v*100).toFixed(1)}%</span></div>`).join('')}
+    </div>` : ''}
+    ${data.postConstraints ? `<div class="result-card" style="border-left:3px solid ${data.postConstraints.passed ? '#059669' : '#dc2626'}">
+      <h4 style="color:${data.postConstraints.passed ? '#34d399' : '#f87171'}">Hard Constraints (หลังหาเส้นทาง): ${data.postConstraints.passed ? 'ผ่านทั้งหมด ✓' : 'มีการละเมิด ⚠'}</h4>
+      ${Object.entries(data.postConstraints.constraints).map(([k,v]) => `<div class="stat"><span>${k}</span><span style="color:${v?'#34d399':'#f87171'}">${v?'ผ่าน':'ไม่ผ่าน'}</span></div>`).join('')}
+    </div>` : ''}
+    <div class="result-card">
+      <h4>ลำดับผู้รอดชีวิต (Urgency) — เส้นทางคำนวณให้คนแรกในลิสต์เท่านั้น</h4>
+      ${data.sortedSurvivors.map(s=>{const u=(100-s.health)*0.5+(100-s.mobility)*0.3+(100-s.supplies)*0.2;return `<div class="stat"><span>${s.id} [${u.toFixed(1)}]</span><span style="font-size:10px">HP:${s.health} M:${s.mobility} S:${s.supplies}</span></div>`;}).join('')}
+    </div>
+    <div class="result-card">
+      <h4>คำแนะนำการเอาชีวิตรอด (น้ำท่วม)</h4>
+      ${SURVIVAL_TIPS.map(t=>`<div class="tip-item tip-flood">${t}</div>`).join('')}
+    </div>
+  `;
+  document.getElementById('resultsContent').innerHTML = html;
+  document.querySelector('.sidebar-body').scrollTop = document.querySelector('.sidebar-body').scrollHeight;
+}
+
+// =====================================================================
+// 14. INIT
+// =====================================================================
+window.addEventListener('DOMContentLoaded', () => {
+  clearAllClient();
+  fetchBackendHazards();
+  setInterval(fetchBackendHazards, 10000);
+});
+</script>
+</body>
+</html>
