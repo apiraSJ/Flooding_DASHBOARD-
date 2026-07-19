@@ -652,7 +652,7 @@ function movementCost(ax, ay, bx, by, hazards) {
     const d = totalDanger(ax + (bx-ax)*t, ay + (by-ay)*t, hazards);
     if (d > maxDanger) maxDanger = d;
   }
-  return dist * Math.pow(10, maxDanger * 3);
+  return dist * Math.exp(Math.pow(maxDanger, 2) * 0.5);
 }
 function computeBounds() {
   const pts = [];
