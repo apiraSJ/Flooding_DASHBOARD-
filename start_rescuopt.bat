@@ -22,4 +22,4 @@ start "RescuOpt Desktop App" cmd /k "cd /d "%~dp0Flood-detection" && call conda 
 echo.
 echo System is running! 
 echo You can close this launcher window.
-timeout /t 3 >nul
+timeout /t 3 /nobreak >nul

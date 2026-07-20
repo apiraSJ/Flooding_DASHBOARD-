@@ -234,18 +234,42 @@ def generate_safe_exit(survivor, hazards, safety_margin_m=DEFAULT_SAFETY_MARGIN_
 # into the rest of the project (e.g. this server.py file or the YOLO model weights).
 @app.route("/")
 def index():
+    """หน้าแรกของเซิร์ฟเวอร์ (root "/") — ส่งไฟล์ dashboard หลัก (disaster_nav.html) กลับไป
+
+    Returns:
+        Response: ไฟล์ HTML ของ dashboard จาก DASHBOARD_DIR
+    """
     return send_from_directory(DASHBOARD_DIR, "disaster_nav.html")
 
 @app.route("/disaster_nav")
 def disaster_nav_redirect():
+    """เส้นทางสำรอง "/disaster_nav" — ส่งไฟล์ dashboard หลักกลับไปเช่นเดียวกับ index()
+
+    Returns:
+        Response: ไฟล์ HTML ของ dashboard จาก DASHBOARD_DIR
+    """
     return send_from_directory(DASHBOARD_DIR, "disaster_nav.html")
 
 @app.route("/dashboard/<path:filename>")
 def serve_dashboard(filename):
+    """เสิร์ฟไฟล์ static ใดๆ ภายในโฟลเดอร์ dashboard (เช่น css, js, image)
+
+    Args:
+        filename (str): ชื่อไฟล์ (หรือ path ย่อย) ที่ต้องการภายใน DASHBOARD_DIR
+
+    Returns:
+        Response: ไฟล์ที่ร้องขอจาก DASHBOARD_DIR
+    """
     return send_from_directory(DASHBOARD_DIR, filename)
 
 @app.route("/api/hazards", methods=["GET"])
 def get_hazards():
+    """คืนสถานะปัจจุบันของ hazard/survivor/exit ทั้งหมดที่เซิร์ฟเวอร์เก็บไว้ (global state)
+
+    Returns:
+        Response: JSON ที่มีคีย์ "hazards" (list), "survivor" (dict หรือ None),
+        และ "exit" (dict หรือ None)
+    """
     with STATE_LOCK:
         return jsonify({
             "hazards": list(GLOBAL_HAZARDS),
@@ -255,6 +279,11 @@ def get_hazards():
 
 @app.route("/api/clear", methods=["POST"])
 def clear_all():
+    """ล้างสถานะทั้งหมด (hazards, survivor, exit) กลับเป็นค่าว่าง
+
+    Returns:
+        Response: JSON {"status": "cleared"}
+    """
     global GLOBAL_HAZARDS, GLOBAL_SURVIVOR, GLOBAL_EXIT
     with STATE_LOCK:
         GLOBAL_HAZARDS.clear()
@@ -265,6 +294,16 @@ def clear_all():
 
 @app.route("/api/remove_hazard", methods=["POST"])
 def remove_hazard():
+    """ลบ hazard ที่ตรงกับพิกัด lat/lng ที่ระบุ (ในระยะ tolerance 0.0001 องศา) ออกจาก GLOBAL_HAZARDS
+
+    Expects JSON body:
+        lat (float): ละติจูดของ hazard ที่ต้องการลบ
+        lng (float): ลองจิจูดของ hazard ที่ต้องการลบ
+
+    Returns:
+        Response: JSON {"status": "ok", "removed": <จำนวนที่ถูกลบ>}
+        หรือ ({"error": "lat/lng required"}, 400) ถ้าไม่ส่ง lat/lng มา
+    """
     global GLOBAL_HAZARDS
     data = request.json
     lat = data.get("lat")
@@ -283,6 +322,21 @@ def remove_hazard():
 
 @app.route("/api/report_flood", methods=["POST"])
 def report_flood():
+    """รับผลตรวจจับน้ำท่วมจาก YOLO (severity/confidence เดี่ยว) แล้วอัปเดต/สร้าง hazard,
+    คำนวณตำแหน่ง survivor จากระยะและทิศทางที่ผู้ใช้ระบุ และหาทางออกที่ปลอดภัยให้อัตโนมัติ
+
+    Expects JSON body:
+        severity (int, optional): ระดับความรุนแรงของน้ำท่วม (default 5)
+        confidence (float, optional): ความมั่นใจของโมเดล YOLO (default 0)
+        lat (float, optional): ละติจูดจุดตรวจพบ (default 13.7563)
+        lng (float, optional): ลองจิจูดจุดตรวจพบ (default 100.5018)
+        user_dist_m (float, optional): ระยะห่างของผู้ใช้จากจุดตรวจพบ (เมตร)
+        user_dir (str, optional): ทิศทางของผู้ใช้ (N/NE/E/SE/S/SW/W/NW)
+        level_label (str, optional): ป้ายกำกับระดับความรุนแรง
+
+    Returns:
+        Response: JSON {"status": "received", "hazard": <hazard ที่สร้าง/อัปเดต>}
+    """
     data = request.json or {}
     severity = data.get("severity", 5)
     confidence = data.get("confidence", 0)
@@ -343,6 +397,21 @@ def report_flood():
 
 @app.route("/api/report_flood_v2", methods=["POST"])
 def report_flood_v2():
+    """รับผลตรวจจับน้ำท่วมแบบชุด (หลาย survivors/hazards พร้อมกัน) แทนที่สถานะ hazard
+    ทั้งหมดด้วยข้อมูลชุดใหม่ กรอง hazard ซ้ำด้วยพิกัด+ประเภท และคำนวณ exit ที่ปลอดภัยให้ survivor แรก
+
+    Expects JSON body:
+        survivors (list, optional): รายการผู้รอดชีวิต แต่ละรายการมี lat/lng
+        hazards (list, optional): รายการ hazard แต่ละรายการมี lat/lng/type/severity/radius_m
+        severity (int, optional): ความรุนแรง default ถ้า hazard ไม่ได้ระบุ (default 5)
+        confidence (float, optional): ความมั่นใจของโมเดล (default 0)
+        level_label (str, optional): ป้ายกำกับระดับความรุนแรง (default "Unknown")
+
+    Returns:
+        Response: JSON {"status": "received", "survivors_count": int,
+        "hazards_count": int, "exit": dict|None}
+        หรือ ({"error": "No data"}, 400) ถ้าไม่มี body
+    """
     data = request.json
     if not data:
         return jsonify({"error": "No data"}), 400
