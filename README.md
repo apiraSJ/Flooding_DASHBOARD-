@@ -1,29 +1,165 @@
 # RescuOpt AI
 
-ระบบการคาดเดาความรุนแรงของน้ำท่วม และคำนวณเส้นทางการอพยพที่ปลอดภัยที่สุด โดยการ optimization
+ระบบตรวจจับ **น้ำท่วม** ด้วย AI (YOLOv8) ร่วมกับระบบ **คำนวณเส้นทางอพยพที่ปลอดภัยที่สุด** ด้วยอัลกอริทึม
+Search / Optimization / Constraint Satisfaction แบบ real-time บนแผนที่
 
-จัดทำโดย : นนอ.อริญชย์ หุนตระนี และ นนอ.อภิรักษ์ สาจันทร์
+จัดทำโดย: นนอ.อริญชย์ หุนตระนี และ นนอ.อภิรักษ์ สาจันทร์
 
-## Quick Start
+---
 
-### One-click launch (Windows)
+## 1. ภาพรวมของระบบ (ทำอะไร)
 
-```bat
-start_rescuopt.bat
+โปรเจกต์นี้ประกอบด้วย **3 ส่วนที่ทำงานร่วมกัน**:
+
+1. **แอปตรวจจับน้ำท่วม (Flood Detection App)** — โปรแกรม Desktop (Tkinter) ให้ผู้ใช้อัปโหลดภาพ/วิดีโอ
+   หรือเลือกวิดีโอจากกล้อง แล้วใช้โมเดล YOLOv8 (`best.pt`) วิเคราะห์พื้นที่น้ำท่วม พร้อมประเมิน
+   ความรุนแรง (Low / Medium / High) และให้คำแนะนำการเอาตัวรอด
+2. **เซิร์ฟเวอร์กลาง (Backend Server)** — Flask API ที่รับผลตรวจจับจากแอป YOLO แล้วเก็บสถานะ
+   (ตำแหน่งภัยพิบัติ, ผู้รอดชีวิต, จุดปลอดภัย) ไว้ในหน่วยความจำ และส่งต่อให้หน้าเว็บ dashboard
+3. **แดชบอร์ดแผนที่ (Web Dashboard)** — หน้าเว็บ (Leaflet.js) ที่แสดงตำแหน่งอันตราย ผู้รอดชีวิต
+   และคำนวณ **เส้นทางอพยพที่ปลอดภัยที่สุด** แบบ real-time ในฝั่ง browser โดยใช้อัลกอริทึม AI/Search
+   ให้เลือกได้ 8 แบบ (ดูหัวข้อ 4)
+
+พูดง่าย ๆ คือ: กล้อง/วิดีโอตรวจจับน้ำท่วม → ส่งพิกัดและความรุนแรงไปที่ server → server ส่งต่อให้
+แผนที่บนเว็บ → แผนที่คำนวณเส้นทางหนีที่ปลอดภัยที่สุดให้ผู้ประสบภัย พร้อมแอนิเมชันการค้นหาเส้นทาง
+
+---
+
+## 2. โครงสร้างไฟล์ และหน้าที่ของแต่ละไฟล์
+
+```
+masterrrrrrr/
+├── Server.py                         # Backend API (Flask) — ศูนย์กลางข้อมูล
+├── start_rescuopt.bat                # สคริปต์ลัดสำหรับรันทั้งระบบบน Windows
+├── geoai_train.code-workspace        # ไฟล์ VS Code workspace (ตั้งค่า conda env)
+├── dashboard/
+│   └── disaster_nav.html             # หน้าเว็บแผนที่ + อัลกอริทึมหาเส้นทาง (client-side)
+└── Flood-detection/
+    ├── main.py                       # แอป Desktop (Tkinter GUI) — จุดเริ่มต้นใช้งานของผู้ใช้
+    ├── yolo.py                       # โมดูลประมวลผลวิดีโอด้วย YOLO (วัดระดับน้ำแบบต่อเนื่อง)
+    ├── best.pt                       # ไฟล์น้ำหนักโมเดล YOLOv8 (segmentation) ที่เทรนไว้แล้ว
+    ├── requirements.txt              # รายการไลบรารีที่ต้องติดตั้ง
+    └── media/                        # ภาพ/วิดีโอตัวอย่างสำหรับทดสอบและภาพประกอบ
 ```
 
-### Manual launch
+### `Server.py` — Flask Backend
+- เปิด API ที่ `http://localhost:5000`
+- เสิร์ฟหน้าเว็บ dashboard จากโฟลเดอร์ `dashboard/` เท่านั้น (ไม่เปิดเผยไฟล์อื่นในโปรเจกต์ เช่น
+  โมเดล `.pt` หรือซอร์สโค้ด server เอง เพื่อความปลอดภัย)
+- เก็บสถานะ (hazards / survivor / exit) แบบ thread-safe ด้วย `threading.Lock`
+- แปลงพิกัด GPS (lat/lng) ↔ ระยะทางเมตร (สำหรับให้อัลกอริทึมฝั่งเว็บคำนวณบนกริดเมตรได้ง่าย)
+- คำนวณ **จุดอพยพที่ปลอดภัย (safe exit point)** อัตโนมัติ โดยขยับออกจากจุดอันตรายที่ใกล้ที่สุด
+  จนกว่าจะพ้นระยะปลอดภัยของอันตรายทุกจุด
+- **Endpoints หลัก:**
 
-**Step 1: Start the server**
+  | Endpoint | Method | หน้าที่ |
+  |---|---|---|
+  | `/` , `/disaster_nav` | GET | เปิดหน้าเว็บ dashboard |
+  | `/dashboard/<file>` | GET | เสิร์ฟไฟล์ static ของ dashboard |
+  | `/api/hazards` | GET | ดึงสถานะปัจจุบันทั้งหมด (hazards, survivor, exit) |
+  | `/api/report_flood` | POST | รับรายงานน้ำท่วม 1 จุดจากกล้อง/วิดีโอ (ใช้โดย `yolo.py`) |
+  | `/api/report_flood_v2` | POST | รับรายงานแบบหลายจุด/หลาย survivor พร้อมกัน (ใช้โดย `main.py`) |
+  | `/api/remove_hazard` | POST | ลบจุดอันตรายที่ระบุ |
+  | `/api/clear` | POST | ล้างสถานะทั้งหมด |
+
+### `dashboard/disaster_nav.html` — หน้าแผนที่ (Frontend)
+- ใช้ **Leaflet.js** วาดแผนที่ แสดงตำแหน่งอันตราย (วงกลมสีตามประเภท/ความรุนแรง), ผู้รอดชีวิต,
+  และจุดอพยพปลอดภัย
+- ดึงข้อมูลจาก `/api/hazards` เป็นระยะ (polling) เพื่ออัปเดตแผนที่แบบ real-time
+- มีฟอร์มให้ผู้ใช้เพิ่ม/ลบจุดอันตรายหรือผู้รอดชีวิตด้วยมือได้เช่นกัน
+- **อัลกอริทึมหาเส้นทางทั้งหมดรันอยู่ในเบราว์เซอร์ (JavaScript)** ไม่ใช่ที่ server โดยแปลง
+  พิกัดเป็นกริดเมตรก่อนคำนวณ แล้วแปลงกลับเป็น lat/lng เพื่อวาดเส้นทางบนแผนที่
+- มีแอนิเมชันแสดงขั้นตอนการค้นหา (HUD แสดงชื่ออัลกอริทึม/สถานะปัจจุบัน)
+
+### `Flood-detection/main.py` — โปรแกรม Desktop (Tkinter GUI)
+- หน้าต่างโปรแกรมหลักที่ผู้ใช้เปิดเพื่อ **อัปโหลดภาพหรือวิดีโอ** และเลือกตำแหน่งบนแผนที่ในตัว
+  (ใช้ `tkintermapview`) สำหรับวาง "ผู้รอดชีวิต" และ "จุดอันตราย"
+- เมื่อกด "เริ่มวิเคราะห์" จะโหลดโมเดล YOLOv8 (`best.pt`) มาตรวจจับพื้นที่น้ำท่วมในภาพ/เฟรมแรกของวิดีโอ
+- คำนวณ % พื้นที่น้ำท่วมเทียบกับพื้นที่ภาพทั้งหมด (union ของ bounding box ด้วย `shapely`) แล้ว
+  จัดระดับความรุนแรง: **<50% = เบา, 50–80% = ปานกลาง, >80% = รุนแรง** พร้อมคำแนะนำการเอาตัวรอด
+  (รวมเบอร์โทรฉุกเฉิน 1784 / 199)
+- ส่งผลลัพธ์ (ตำแหน่งผู้รอดชีวิต + จุดอันตราย) ไปที่ `Server.py` ผ่าน `POST /api/report_flood_v2`
+  แล้วเปิดเบราว์เซอร์ไปที่หน้า dashboard ให้อัตโนมัติ
+
+### `Flood-detection/yolo.py` — โมดูลประมวลผลวิดีโอต่อเนื่อง
+- ใช้แยกต่างหากจาก `main.py` สำหรับกรณี **ประมวลผลวิดีโอทั้งคลิปแบบต่อเนื่องทีละเฟรม** (ไม่ใช่แค่เฟรมแรก)
+- ตรวจจับขอบเขตน้ำด้วย YOLOv8 segmentation แล้ววัด **ระยะห่างจากเส้นอ้างอิง (reference line)** ที่ผู้ใช้กำหนด
+  เพื่อประเมินระดับน้ำเป็นหน่วยเมตร (ต้องระบุ `pixelsInAMeter` และพิกัดเส้นอ้างอิงในภาพ)
+- วาดผลลัพธ์ลงวิดีโอ (สถานะ SAFE / WARNING / NO FLOOD) แล้วบันทึกเป็น `Output Video.mp4`
+- ส่งรายงานไปที่ `Server.py` ผ่าน `POST /api/report_flood` โดยอัตโนมัติเมื่อสถานะเปลี่ยน หรือทุก ๆ
+  150 เฟรม (ป้องกันไม่ให้ยิง request ถี่เกินไป)
+- ฟังก์ชันหลักที่เรียกใช้คือ `yolo(video_path, ...)` — ไม่มี GUI ในตัวเอง เหมาะสำหรับต่อกับกล้อง/สคริปต์อื่น
+
+### `Flood-detection/best.pt`
+- ไฟล์น้ำหนักโมเดล **YOLOv8 (segmentation)** ที่เทรนมาแล้วสำหรับตรวจจับพื้นที่น้ำท่วมโดยเฉพาะ
+  ถูกโหลดใช้งานทั้งใน `main.py` และ `yolo.py`
+
+### `Flood-detection/requirements.txt`
+- รายการไลบรารี Python ที่จำเป็นสำหรับส่วน Flood Detection (ดูวิธีติดตั้งในหัวข้อถัดไป)
+
+### `Flood-detection/media/`
+- ภาพและวิดีโอตัวอย่าง (เช่น `Fixed Hikuwai.mp4`, ภาพหน้าจอ GUI, ภาพผลลัพธ์) ใช้สำหรับสาธิต/ทดสอบระบบ
+
+### `start_rescuopt.bat`
+- สคริปต์ Windows ที่เปิด `Server.py` และ `Flood-detection/main.py` พร้อมกันในคนละหน้าต่าง cmd
+  (path Python ใน bat นี้ผูกกับเครื่องของผู้พัฒนา ต้องแก้ path ให้ตรงกับเครื่องตัวเองก่อนใช้ — ดูหัวข้อ 3)
+
+### `geoai_train.code-workspace`
+- ไฟล์ตั้งค่า VS Code workspace ให้ใช้ conda เป็นตัวจัดการ environment/package โดยอัตโนมัติเวลาเปิดโปรเจกต์
+
+---
+
+## 3. วิธีติดตั้งและรันโปรแกรม (ละเอียด)
+
+### 3.1 ข้อกำหนดเบื้องต้น
+- Python 3.9–3.10 แนะนำให้ใช้ผ่าน **Conda** (มีการอ้างอิง environment ชื่อ `geoai`)
+- ระบบปฏิบัติการ: Windows (ทดสอบ/ออกแบบมาสำหรับ Windows โดยเฉพาะ จาก `start_rescuopt.bat`)
+  — ใช้ macOS/Linux ได้ถ้าปรับ path เอง
+- GPU ไม่จำเป็น (โมเดลถูกตั้งค่าให้รันบน CPU เป็นค่าเริ่มต้น `model.to("cpu")`)
+
+### 3.2 สร้าง environment และติดตั้งไลบรารี
+
+```bash
+# สร้างและเปิดใช้งาน conda environment
+conda create -n geoai python=3.10 -y
+conda activate geoai
+
+# ติดตั้งไลบรารีของ backend server
+pip install flask flask-cors
+
+# ติดตั้งไลบรารีของแอป Flood Detection
+cd Flood-detection
+pip install -r requirements.txt
+
+# ไลบรารีเพิ่มเติมที่โค้ดใช้งานจริงแต่ไม่ได้อยู่ใน requirements.txt เดิม ต้องติดตั้งเพิ่ม
+pip install torch opencv-python pillow numpy requests
+```
+
+> **หมายเหตุ:** `requirements.txt` ที่ให้มาไม่ครบ (ขาด `torch`, `opencv-python`, `pillow`, `numpy`,
+> `requests`) ซึ่งเป็น dependency ที่ `main.py` และ `yolo.py` import ใช้จริง แนะนำให้ติดตั้งตามคำสั่ง
+> เพิ่มเติมด้านบนด้วย ไม่เช่นนั้นโปรแกรมจะ error ตอนเริ่มวิเคราะห์ภาพ/วิดีโอ
+
+### 3.3 วิธีรันแบบเร็ว (Windows, One-click)
+
+1. เปิดไฟล์ `start_rescuopt.bat` ด้วย text editor ก่อน แล้วแก้ path ของ Python ให้ตรงกับเครื่องตัวเอง
+   (ค่าเดิมชี้ไปที่ `C:\Users\arin\miniconda3\python.exe` ซึ่งเป็นเครื่องของผู้พัฒนา)
+2. ดับเบิลคลิก `start_rescuopt.bat` — จะเปิด 2 หน้าต่าง cmd ให้อัตโนมัติ:
+   - หน้าต่างแรก: รัน `Server.py` (backend + dashboard)
+   - หน้าต่างสอง: รัน `Flood-detection/main.py` (แอป Desktop)
+
+### 3.4 วิธีรันแบบ Manual (แนะนำสำหรับตรวจสอบ/debug)
+
+**ขั้นตอนที่ 1 — เปิด Backend Server**
 
 ```bash
 conda activate geoai
 python Server.py
 ```
 
-Open browser: <http://localhost:5000/disaster_nav>
+- เซิร์ฟเวอร์จะรันที่ `http://127.0.0.1:5000`
+- เปิดเบราว์เซอร์ไปที่ **`http://localhost:5000/disaster_nav`** เพื่อดูแดชบอร์ดแผนที่
 
-**Step 2: Start flood detection (new terminal)**
+**ขั้นตอนที่ 2 — เปิดแอปตรวจจับน้ำท่วม (เปิด terminal ใหม่)**
 
 ```bash
 conda activate geoai
@@ -31,18 +167,74 @@ cd Flood-detection
 python main.py
 ```
 
-## Architecture
+จะขึ้นหน้าต่าง GUI ให้:
+1. เลือกโหมด "ภาพนิ่ง" หรือ "วิดีโอ"
+2. กด "เปิดแผนที่เลือกตำแหน่ง" เพื่อวางจุด **ผู้รอดชีวิต** และ **จุดอันตราย** บนแผนที่ในตัวแอป
+3. อัปโหลดไฟล์ภาพ/วิดีโอที่ต้องการวิเคราะห์
+4. กดเริ่มวิเคราะห์ — โปรแกรมจะรันโมเดล YOLOv8 ประเมินความรุนแรง แล้วส่งผลไปที่ Server อัตโนมัติ
+   พร้อมเปิดเบราว์เซอร์ไปที่หน้า dashboard ให้เห็นผลลัพธ์แบบ real-time
 
-| Component | Role |
-|-----------|------|
-| `Server.py` | Flask backend — relay API for YOLO detections |
-| `dashboard/disaster_nav.html` | Frontend UI — Leaflet map + 8 pathfinding algorithms (client-side) |
-| `Flood-detection/main.py` | Tkinter YOLO GUI — camera/video flood detection |
-| `Flood-detection/yolo.py` | YOLO video processor module |
-| `Flood-detection/best.pt` | YOLOv8 model weights |
+**(ทางเลือก) ประมวลผลวิดีโอต่อเนื่องด้วย `yolo.py`**
 
-## Algorithms
+ใช้เมื่อมีวิดีโอกล้องวงจรปิด/วิดีโอยาวที่ต้องการวัดระดับน้ำแบบต่อเนื่องทุกเฟรม แทนที่จะดูแค่เฟรมแรก
+เรียกใช้จากสคริปต์ Python ของตัวเอง เช่น:
 
-**Search:** A*, BFS, Greedy Best-First
-**Optimization:** Simulated Annealing, Hill Climbing (Steepest), Genetic Algorithm
-**Constraint:** Backtracking, AC-3 Arc Consistency
+```python
+from Flood_detection.yolo import yolo   # ปรับ import ตามตำแหน่งไฟล์จริง
+
+yolo(
+    video_path="media/Fixed Hikuwai.mp4",
+    firstCoordinate_x=100, firstCoordinate_y=200,   # จุดเริ่มเส้นอ้างอิงในภาพ (พิกเซล)
+    secondCoordinate_x=400, secondCoordinate_y=200, # จุดปลายเส้นอ้างอิงในภาพ (พิกเซล)
+    pixelsInAMeter=50,     # อัตราส่วน พิกเซล ต่อ 1 เมตร ในภาพ
+    tipHeight=2.5,         # ความสูงอ้างอิงของเส้น (เมตร)
+    warningLevel=1.5,      # ระดับน้ำที่จะแจ้งเตือน WARNING (เมตร)
+    lat=13.7563, lng=100.5018,   # พิกัด GPS จริงของกล้อง
+    user_dir="N",          # ทิศทางที่ผู้รอดชีวิตอยู่เทียบกับกล้อง
+    show_preview=False,    # True = เปิดหน้าต่าง preview (ต้องมีจอแสดงผล)
+)
+```
+
+ผลลัพธ์จะถูกบันทึกเป็น `Output Video.mp4` และส่งรายงานไปที่ `Server.py` โดยอัตโนมัติ
+(ตั้งค่า URL ปลายทางผ่าน environment variable `REPORT_URL` ได้ ค่าเริ่มต้นคือ
+`http://localhost:5000/api/report_flood`)
+
+### 3.5 ตั้งค่าเพิ่มเติมผ่าน Environment Variables
+
+| ตัวแปร | ค่าเริ่มต้น | ใช้ที่ไฟล์ | หน้าที่ |
+|---|---|---|---|
+| `PORT` | `5000` | `Server.py` | พอร์ตที่ Flask server รับฟัง |
+| `FLASK_DEBUG` | `0` | `Server.py` | ตั้งเป็น `1` เพื่อเปิด debug mode ตอนพัฒนา (ห้ามเปิดตอนใช้งานจริง) |
+| `CORS_ORIGINS` | `*` | `Server.py` | จำกัด origin ที่อนุญาตให้เรียก API (ควรตั้งเป็นโดเมนจริงถ้า deploy ให้คนอื่นเข้าถึง) |
+| `REPORT_URL` | `http://localhost:5000/api/report_flood` | `Flood-detection/yolo.py` | ปลายทางที่ `yolo.py` จะส่งรายงานไป |
+
+---
+
+## 4. อัลกอริทึมหาเส้นทางอพยพ (เลือกได้บนหน้าแดชบอร์ด)
+
+| หมวด | อัลกอริทึม | แนวคิด |
+|---|---|---|
+| Search | **A\*** | ค้นหาเส้นทางสั้นที่สุดโดยใช้ heuristic (f = g + h) |
+| Search | **BFS** | ค้นหาแบบกว้างก่อน รับประกันเจอเส้นทางแต่ไม่การันตีสั้นสุด |
+| Search | **Greedy Best-First** | เลือกก้าวที่ดูใกล้เป้าหมายที่สุดในแต่ละขั้น เร็วแต่ไม่รับประกันดีที่สุด |
+| Optimization | **Simulated Annealing** | สุ่มปรับเส้นทางแล้วยอมรับคำตอบที่แย่กว่าได้บ้างเพื่อหนีจุดที่เหมาะสมเฉพาะที่ (local optimum) |
+| Optimization | **Hill Climbing (Steepest)** | ปรับเส้นทางไปในทิศที่ดีขึ้นเรื่อย ๆ จนไม่สามารถดีขึ้นได้อีก |
+| Optimization | **Genetic Algorithm** | สร้างประชากรเส้นทาง แล้ว cross-over/mutation คัดเลือกเส้นทางที่ดีที่สุดในแต่ละรุ่น |
+| Constraint | **Backtracking** | ค้นหาเชิงลึกพร้อมย้อนกลับเมื่อเจอทางตันหรือผิดกฎ (เช่น เข้าเขตอันตรายเกินเกณฑ์) |
+| Constraint | **AC-3 (Arc Consistency)** | ตัดพื้นที่ที่เป็นไปไม่ได้ออกก่อนค้นหา เพื่อลดพื้นที่ค้นหาให้เล็กลง |
+
+ทุกอัลกอริทึมคำนวณ **"ความอันตราย" (danger score)** ของแต่ละจุดบนกริดจากระยะห่างและความรุนแรง
+ของจุดอันตรายรอบข้าง แล้วพยายามหาเส้นทางจากผู้รอดชีวิตไปยังจุดอพยพที่ **ปลอดภัยที่สุดและ/หรือสั้นที่สุด**
+
+---
+
+## 5. ข้อควรระวัง / ข้อจำกัดที่พบจากการอ่านโค้ด
+
+- `requirements.txt` ไม่ครบ — ต้องติดตั้ง `torch`, `opencv-python`, `pillow`, `numpy`, `requests` เพิ่มเอง
+- `start_rescuopt.bat` ผูก path ไว้กับเครื่องผู้พัฒนา (`C:\Users\arin\...`) ต้องแก้ให้ตรงกับเครื่องของผู้ใช้เอง
+  — ส่วน `main.py`/`yolo.py` เวอร์ชันปัจจุบันใช้ path สัมพัทธ์แล้ว (`os.path.join(os.path.dirname(__file__), "best.pt")`)
+- รองรับเฉพาะภาพ/เฟรมที่มีความละเอียดขั้นต่ำ **640×640 พิกเซล** (ไฟล์เล็กกว่านี้จะถูกปฏิเสธ)
+- `Server.py` เก็บข้อมูลทั้งหมดไว้ใน **หน่วยความจำ (in-memory)** เท่านั้น — รีสตาร์ท server แล้วข้อมูลหาย
+  ไม่เหมาะกับการใช้งานจริงระยะยาวโดยไม่มีฐานข้อมูล
+- ควรรันในเครือข่ายที่เชื่อถือได้ (localhost/LAN) เท่านั้น เว้นแต่จะตั้งค่า `CORS_ORIGINS` และมาตรการ
+  ความปลอดภัยอื่นเพิ่มเติมก่อนเปิดสู่อินเทอร์เน็ตสาธารณะ
