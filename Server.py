@@ -51,16 +51,55 @@ REF_LNG = 100.5018
 DEG_M_LAT = 111320
 
 def to_meters(lat, lng):
+    """แปลงพิกัด GPS (lat, lng) ให้เป็นระยะทางหน่วยเมตร (x, y) เทียบกับจุดอ้างอิง REF_LAT/REF_LNG
+
+    ใช้ flat-earth approximation (ไม่ใช่ great-circle) ซึ่งแม่นยำพอสำหรับพื้นที่ขนาดเล็ก
+    (ระดับเมือง/จังหวัด) และช่วยให้อัลกอริทึมหาเส้นทางฝั่งเว็บคำนวณบนกริดเมตรธรรมดาได้ง่ายกว่า
+    การคำนวณบนพิกัดองศาโดยตรง
+
+    Args:
+        lat (float): ละติจูด (องศา)
+        lng (float): ลองจิจูด (องศา)
+
+    Returns:
+        dict: {"x": ระยะทางแกน East-West เป็นเมตร, "y": ระยะทางแกน North-South เป็นเมตร}
+        ทั้งคู่ปัดเป็นจำนวนเต็มด้วย round()
+    """
     dx = (lng - REF_LNG) * DEG_M_LAT * math.cos(math.radians(REF_LAT))
     dy = (lat - REF_LAT) * DEG_M_LAT
     return {"x": round(dx), "y": round(dy)}
 
 def to_latlng(x, y):
+    """แปลงระยะทางหน่วยเมตร (x, y) กลับเป็นพิกัด GPS (lat, lng)
+
+    เป็นฟังก์ชันผกผัน (inverse) ของ to_meters() ใช้แปลงผลลัพธ์จากการคำนวณบนกริดเมตร
+    (เช่น เส้นทางที่อัลกอริทึมหาได้) กลับไปเป็นพิกัดจริงเพื่อส่งให้ frontend วาดบนแผนที่
+
+    Args:
+        x (float): ระยะทางแกน East-West เป็นเมตร (เทียบกับจุดอ้างอิง)
+        y (float): ระยะทางแกน North-South เป็นเมตร (เทียบกับจุดอ้างอิง)
+
+    Returns:
+        list[float, float]: [lat, lng] พิกัด GPS ที่แปลงกลับมา
+    """
     lng = REF_LNG + x / (DEG_M_LAT * math.cos(math.radians(REF_LAT)))
     lat = REF_LAT + y / DEG_M_LAT
     return [lat, lng]
 
 def haversine(lat1, lng1, lat2, lng2):
+    """คำนวณระยะทางจริงบนผิวโลก (เมตร) ระหว่างพิกัด GPS สองจุด ด้วยสูตร Haversine
+
+    ต่างจาก to_meters()/to_latlng() ตรงที่ฟังก์ชันนี้แม่นยำกว่าสำหรับการวัดระยะทางตรง ๆ
+    (great-circle distance) จึงถูกใช้ในจุดที่ต้องเทียบระยะปลอดภัย เช่น ตรวจว่าจุดอพยพ
+    ห่างจากจุดอันตรายพอหรือยัง
+
+    Args:
+        lat1, lng1 (float): พิกัดจุดที่ 1 (องศา)
+        lat2, lng2 (float): พิกัดจุดที่ 2 (องศา)
+
+    Returns:
+        float: ระยะทางเป็นเมตรระหว่างสองจุด
+    """
     dlat = math.radians(lat2 - lat1)
     dlng = math.radians(lng2 - lng1)
     a = (
@@ -71,6 +110,20 @@ def haversine(lat1, lng1, lat2, lng2):
     return EARTH_RADIUS_M * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 def offset_coordinate(lat, lng, distance_m, bearing_deg):
+    """หาพิกัด GPS ใหม่ที่อยู่ห่างจากจุดเริ่มต้นไปในทิศทางและระยะทางที่กำหนด
+
+    ใช้สูตรคำนวณพิกัดปลายทางบนทรงกลม (spherical destination formula) เพื่อ "เดิน" จาก
+    จุดหนึ่งไปตามทิศทาง (bearing) เป็นระยะทางที่ต้องการ แล้วได้พิกัดปลายทางกลับมา
+    ใช้ในการวาง survivor แบบ placeholder และการขยับหาจุดอพยพที่ปลอดภัย
+
+    Args:
+        lat, lng (float): พิกัดจุดเริ่มต้น (องศา)
+        distance_m (float): ระยะทางที่ต้องการเดินจากจุดเริ่มต้น (เมตร)
+        bearing_deg (float): ทิศทางเป็นมุมองศา (0 = เหนือ, 90 = ตะวันออก, ตามเข็มนาฬิกา)
+
+    Returns:
+        dict: {"lat": ละติจูดใหม่, "lng": ลองจิจูดใหม่}
+    """
     bearing = math.radians(bearing_deg)
     angular_distance = distance_m / EARTH_RADIUS_M
     lat1 = math.radians(lat)
@@ -86,6 +139,20 @@ def offset_coordinate(lat, lng, distance_m, bearing_deg):
     return {"lat": math.degrees(lat2), "lng": math.degrees(lng2)}
 
 def total_danger(mx, my, hazards):
+    """คำนวณ "คะแนนความอันตราย" รวม (0.0–1.0) ของจุด (mx, my) บนกริดเมตร
+
+    สำหรับจุดอันตรายแต่ละจุดที่จุด (mx, my) อยู่ในรัศมี จะบวกคะแนนตามสัดส่วนความรุนแรง
+    (severity/10) คูณด้วยความใกล้ศูนย์กลาง (1 - dist/radius) — ยิ่งใกล้จุดอันตรายและ
+    ยิ่งรุนแรงมาก คะแนนยิ่งสูง ผลรวมทั้งหมดถูก clamp ไว้ไม่เกิน 1.0 ใช้เป็นค่าอ้างอิง
+    ความปลอดภัยของพื้นที่ (ค่าเดียวกับที่ dashboard ฝั่งเว็บใช้ในอัลกอริทึมหาเส้นทาง)
+
+    Args:
+        mx, my (float): ตำแหน่งที่ต้องการประเมิน บนกริดเมตร (มาจาก to_meters())
+        hazards (list[dict]): รายการจุดอันตราย แต่ละจุดมี lat, lng, radius_m, severity
+
+    Returns:
+        float: คะแนนความอันตรายรวม อยู่ในช่วง 0.0 (ปลอดภัยสนิท) ถึง 1.0 (อันตรายสูงสุด)
+    """
     total = 0.0
     for h in hazards:
         hm = to_meters(h["lat"], h["lng"])
@@ -96,6 +163,19 @@ def total_danger(mx, my, hazards):
     return min(total, 1.0)
 
 def exit_is_safe(exit_point, hazards, safety_margin_m=DEFAULT_SAFETY_MARGIN_M):
+    """ตรวจสอบว่าจุด exit_point ห่างจากจุดอันตราย "ทุกจุด" มากกว่า (รัศมีอันตราย + ระยะกันชน) หรือไม่
+
+    ใช้เป็นเงื่อนไขยืนยันความปลอดภัยก่อนเลือกจุดใดจุดหนึ่งเป็น "จุดอพยพ" (safe exit)
+    ต้องผ่านเงื่อนไขนี้กับจุดอันตรายทุกจุดพร้อมกัน (all()) จึงจะถือว่าปลอดภัย
+
+    Args:
+        exit_point (dict): {"lat": ..., "lng": ...} จุดที่ต้องการตรวจสอบ
+        hazards (list[dict]): รายการจุดอันตรายทั้งหมด
+        safety_margin_m (float): ระยะกันชนเพิ่มเติมนอกเหนือจากรัศมีอันตราย (เมตร)
+
+    Returns:
+        bool: True ถ้าปลอดภัยจากจุดอันตรายทุกจุด, False ถ้าอยู่ใกล้จุดใดจุดหนึ่งเกินไป
+    """
     return all(
         haversine(exit_point["lat"], exit_point["lng"], h["lat"], h["lng"])
         > (h.get("radius_m") or DEFAULT_HAZARD_RADIUS_M) + safety_margin_m
@@ -103,6 +183,24 @@ def exit_is_safe(exit_point, hazards, safety_margin_m=DEFAULT_SAFETY_MARGIN_M):
     )
 
 def generate_safe_exit(survivor, hazards, safety_margin_m=DEFAULT_SAFETY_MARGIN_M):
+    """คำนวณหาจุดอพยพ (exit point) ที่ปลอดภัยที่สุดโดยอัตโนมัติ ให้ผู้รอดชีวิต 1 คน
+
+    วิธีการ:
+        1. ถ้าไม่มี survivor → คืนค่า None (ไม่มีอะไรให้คำนวณ)
+        2. ถ้าไม่มี hazard เลย → เดินออกจากตำแหน่ง survivor ไป 5000 เมตร (ทิศเหนือ) ถือว่าปลอดภัย
+        3. ถ้ามี hazard → หาจุดอันตรายที่ใกล้ survivor ที่สุด แล้วคำนวณทิศทาง (bearing)
+           จากจุดอันตรายนั้นไปยัง survivor เพื่อใช้เป็นทิศ "หนีออก" จากศูนย์กลางอันตราย
+        4. เดินออกจากจุดอันตรายนั้นไปตามทิศทางดังกล่าวทีละ safety_margin_m จนกว่า
+           exit_is_safe() จะยืนยันว่าจุดนั้นปลอดภัยจากจุดอันตรายทุกจุด (ลองสูงสุด 60 รอบ)
+
+    Args:
+        survivor (dict | None): {"lat": ..., "lng": ...} ตำแหน่งผู้รอดชีวิต
+        hazards (list[dict]): รายการจุดอันตรายทั้งหมด
+        safety_margin_m (float): ระยะกันชนที่ต้องการให้ห่างจากจุดอันตรายเพิ่มเติม (เมตร)
+
+    Returns:
+        dict | None: {"lat": ..., "lng": ...} จุดอพยพที่ปลอดภัย หรือ None ถ้าไม่มี survivor
+    """
     if not survivor:
         return None
     if not hazards:
