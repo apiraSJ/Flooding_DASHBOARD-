@@ -7,7 +7,11 @@ shapely==2.0.1
 tkintermapview
 
 # เพิ่มเติม: ไลบรารีที่โค้ดใน main.py / yolo.py import ใช้งานจริง แต่ไม่มีในไฟล์เดิม
-torch==2.0.1
+# หมายเหตุ: torch ต้อง >=2.4 เพราะโค้ดเรียกใช้ torch.serialization.add_safe_globals()
+# ซึ่งเป็นฟังก์ชันที่เพิ่งมีใน PyTorch ตั้งแต่เวอร์ชัน 2.4 เป็นต้นไป
+# (torch==2.0.1 เดิมไม่มีฟังก์ชันนี้ ทำให้เกิด AttributeError ตอนโหลดโมเดล)
+torch>=2.4,<2.5
+torchvision>=0.19,<0.20
 opencv-python==4.8.0.76
 pillow==10.0.0
 numpy==1.24.4

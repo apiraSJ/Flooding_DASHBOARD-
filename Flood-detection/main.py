@@ -55,102 +55,10 @@ SURVIVOR_COLLISION_DISTANCE_M = 5
 CONF_THRESHOLD = 0.5
 MIN_ANALYSIS_RESOLUTION = 640
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "best.pt")
+
 # ============================================================
 #  YOLO Integration Logic
 # ============================================================
-def run_yolo(file_path, file_type, on_result):
-    """
-    Run YOLOv8 model on image or video file and return flood detection results.
-    
-    Args:
-        file_path (str): Path to image or video file to process
-        file_type (str): Type of file - 'image' or 'video'
-        on_result (callable): Callback function with signature:
-            on_result(level, pct, title, advice) where:
-            - level (str): "low" | "mid" | "high" | "error"
-            - pct (int): 0-100 confidence/severity percentage
-            - title (str): Severity level description
-            - advice (str): Actionable survival recommendations
-    
-    Processing:
-        1. Load YOLOv8 segmentation model (best.pt)
-        2. For images: Direct inference
-        3. For videos: Extract and analyze first frame
-        4. Calculate maximum confidence from detected objects
-        5. Classify severity based on confidence threshold
-        6. Generate context-specific advice for users
-    
-    Severity Levels:
-        - Low (<40% confidence): Normal operations, monitor updates
-        - Medium (40-70%): Evacuate valuables, avoid water crossings
-        - High (>70%): Immediate evacuation recommended
-    
-    Error Handling:
-        - Invalid file format → returns error callback
-        - Missing model file → raises exception
-        - Video read failure → returns error callback
-    """
-    try:
-        import torch
-        import torch.serialization
-        from ultralytics import YOLO
-        from ultralytics.nn.tasks import SegmentationModel
-
-        torch.serialization.add_safe_globals([SegmentationModel])
-        model = YOLO("D:/geoai_train/geoai_train/Flood-detection/best.pt")
-        model.to("cpu")
-
-        if file_type == "image":
-            results = model(file_path)
-        else:
-            # วิดีโอ — ใช้เฟรมแรก
-            import cv2
-            cap = cv2.VideoCapture(file_path)
-            ret, frame = cap.read()
-            cap.release()
-            if not ret:
-                raise ValueError("อ่านวิดีโอไม่ได้")
-            results = model(frame)
-
-        # คำนวณเปอร์เซ็นต์พื้นที่น้ำท่วมเทียบกับรูปทั้งหมด (Area Ratio)
-        boxes_xyxy = results[0].boxes.xyxy.tolist() if results[0].boxes else []
-        if boxes_xyxy:
-            from shapely.geometry import box
-            from shapely.ops import unary_union
-            
-            # ขนาดรูปภาพต้นฉบับ
-            h, w = results[0].orig_shape
-            total_area = float(w * h)
-            
-            # วาดกรอบ Polygon แล้วนำมา Union กันเพื่อหาพื้นที่รวมแบบไม่ซ้อนทับ
-            polygons = [box(b[0], b[1], b[2], b[3]) for b in boxes_xyxy]
-            union_poly = unary_union(polygons)
-            flood_area = union_poly.area
-            
-            pct = int((flood_area / total_area) * 100)
-            pct = min(100, max(0, pct))
-        else:
-            pct = 0
-
-        if pct < 50:
-            level, title = "low",  "น้ำท่วมระดับเบา"
-            advice = ("ระดับน้ำอยู่ในเกณฑ์ต่ำ ยังสามารถสัญจรได้ตามปกติ\n"
-                    "แนะนำติดตามข่าวสารและเตรียมพร้อมหากระดับน้ำเพิ่มขึ้น")
-        elif pct <= 80:
-            level, title = "mid",  "น้ำท่วมระดับปานกลาง"
-            advice = ("ระดับน้ำมีผลกระทบต่อการสัญจรและที่พักอาศัยบางส่วน\n"
-                    "ควรย้ายทรัพย์สินขึ้นที่สูง และหลีกเลี่ยงการขับรถลุยน้ำ")
-        else:
-            level, title = "high", "น้ำท่วมระดับรุนแรง"
-            advice = ("อยู่ในสถานการณ์อันตราย ควรอพยพออกจากพื้นที่ทันที\n"
-                    "ติดต่อหน่วยกู้ภัย โทร 1784 หรือ 199")
-
-        on_result(level, pct, title, advice)
-
-    except Exception as e:
-        on_result("error", 0, "เกิดข้อผิดพลาด", str(e))
-
-
 def run_yolo(file_path, file_type, on_result):
     """Validate input, run YOLO, and stop safely when analysis has no flood result."""
     try:
