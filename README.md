@@ -28,7 +28,7 @@ Search / Optimization / Constraint Satisfaction แบบ real-time บนแผ
 ## 2. โครงสร้างไฟล์ และหน้าที่ของแต่ละไฟล์
 
 ```
-masterrrrrrr/
+Flooding_DASHBOARD/
 ├── Server.py                         # Backend API (Flask) — ศูนย์กลางข้อมูล
 ├── start_rescuopt.bat                # สคริปต์ลัดสำหรับรันทั้งระบบบน Windows
 ├── geoai_train.code-workspace        # ไฟล์ VS Code workspace (ตั้งค่า conda env)
