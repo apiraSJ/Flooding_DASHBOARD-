@@ -5,3 +5,10 @@ tk==0.1.0
 ultralytics==8.0.116
 shapely==2.0.1
 tkintermapview
+
+# เพิ่มเติม: ไลบรารีที่โค้ดใน main.py / yolo.py import ใช้งานจริง แต่ไม่มีในไฟล์เดิม
+torch==2.0.1
+opencv-python==4.8.0.76
+pillow==10.0.0
+numpy==1.24.4
+requests==2.31.0

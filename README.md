@@ -127,25 +127,29 @@ conda activate geoai
 # ติดตั้งไลบรารีของ backend server
 pip install flask flask-cors
 
-# ติดตั้งไลบรารีของแอป Flood Detection
+# ติดตั้งไลบรารีของแอป Flood Detection (อัปเดตแล้ว ครบทุกไลบรารีในไฟล์เดียว)
 cd Flood-detection
 pip install -r requirements.txt
-
-# ไลบรารีเพิ่มเติมที่โค้ดใช้งานจริงแต่ไม่ได้อยู่ใน requirements.txt เดิม ต้องติดตั้งเพิ่ม
-pip install torch opencv-python pillow numpy requests
 ```
 
-> **หมายเหตุ:** `requirements.txt` ที่ให้มาไม่ครบ (ขาด `torch`, `opencv-python`, `pillow`, `numpy`,
-> `requests`) ซึ่งเป็น dependency ที่ `main.py` และ `yolo.py` import ใช้จริง แนะนำให้ติดตั้งตามคำสั่ง
-> เพิ่มเติมด้านบนด้วย ไม่เช่นนั้นโปรแกรมจะ error ตอนเริ่มวิเคราะห์ภาพ/วิดีโอ
+> **หมายเหตุ:** `requirements.txt` ถูกแก้ไขให้ครบแล้ว — เดิมขาด `torch`, `opencv-python`, `pillow`,
+> `numpy`, `requests` ซึ่งเป็น dependency ที่ `main.py` และ `yolo.py` import ใช้จริง ตอนนี้รัน
+> `pip install -r requirements.txt` ครั้งเดียวก็ติดตั้งครบ ไม่ต้องสั่งเพิ่มแยกอีกแล้ว
 
 ### 3.3 วิธีรันแบบเร็ว (Windows, One-click)
 
-1. เปิดไฟล์ `start_rescuopt.bat` ด้วย text editor ก่อน แล้วแก้ path ของ Python ให้ตรงกับเครื่องตัวเอง
-   (ค่าเดิมชี้ไปที่ `C:\Users\arin\miniconda3\python.exe` ซึ่งเป็นเครื่องของผู้พัฒนา)
-2. ดับเบิลคลิก `start_rescuopt.bat` — จะเปิด 2 หน้าต่าง cmd ให้อัตโนมัติ:
-   - หน้าต่างแรก: รัน `Server.py` (backend + dashboard)
-   - หน้าต่างสอง: รัน `Flood-detection/main.py` (แอป Desktop)
+`start_rescuopt.bat` ถูกแก้ไขให้ **ไม่ผูก path เครื่องผู้พัฒนาอีกต่อไป** — ใช้ `conda activate` และ
+`%~dp0` (ตำแหน่งไฟล์ .bat เอง) แทนการ hardcode path ของ `python.exe` จึงพกไปรันเครื่องไหนก็ได้ทันที
+โดยไม่ต้องแก้ไขไฟล์ ขอแค่มีเงื่อนไขต่อไปนี้:
+
+- ติดตั้ง Conda ไว้แล้ว และรันจาก **Anaconda Prompt** หรือ cmd ที่ตั้งค่า conda ไว้แล้ว
+  (ถ้า `conda activate` ใช้ไม่ได้ใน cmd ปกติ ให้รัน `conda init cmd.exe` ครั้งเดียวก่อน แล้วเปิด cmd ใหม่)
+- สร้าง environment ชื่อ `geoai` ไว้แล้วตามขั้นตอน 3.2 (ถ้า environment ของคุณชื่ออื่น ให้แก้ค่า
+  `set ENV_NAME=geoai` ที่บรรทัดต้นไฟล์ `start_rescuopt.bat` เป็นชื่อ environment ของคุณ)
+
+วิธีใช้: ดับเบิลคลิก `start_rescuopt.bat` — จะเปิด 2 หน้าต่าง cmd ให้อัตโนมัติ:
+- หน้าต่างแรก: activate environment แล้วรัน `Server.py` (backend + dashboard)
+- หน้าต่างสอง: activate environment แล้วรัน `Flood-detection/main.py` (แอป Desktop)
 
 ### 3.4 วิธีรันแบบ Manual (แนะนำสำหรับตรวจสอบ/debug)
 
@@ -230,8 +234,8 @@ yolo(
 
 ## 5. ข้อควรระวัง / ข้อจำกัดที่พบจากการอ่านโค้ด
 
-- `requirements.txt` ไม่ครบ — ต้องติดตั้ง `torch`, `opencv-python`, `pillow`, `numpy`, `requests` เพิ่มเอง
-- `start_rescuopt.bat` ผูก path ไว้กับเครื่องผู้พัฒนา (`C:\Users\arin\...`) ต้องแก้ให้ตรงกับเครื่องของผู้ใช้เอง
+- `start_rescuopt.bat` แก้ให้ใช้ `conda activate` + `%~dp0` แล้ว จึงไม่ผูกกับเครื่องผู้พัฒนาอีกต่อไป
+  (ยังคงต้องมี conda และ environment ชื่อ `geoai` อยู่ในเครื่องที่รันอยู่ดี) (`C:\Users\arin\...`) ต้องแก้ให้ตรงกับเครื่องของผู้ใช้เอง
   — ส่วน `main.py`/`yolo.py` เวอร์ชันปัจจุบันใช้ path สัมพัทธ์แล้ว (`os.path.join(os.path.dirname(__file__), "best.pt")`)
 - รองรับเฉพาะภาพ/เฟรมที่มีความละเอียดขั้นต่ำ **640×640 พิกเซล** (ไฟล์เล็กกว่านี้จะถูกปฏิเสธ)
 - `Server.py` เก็บข้อมูลทั้งหมดไว้ใน **หน่วยความจำ (in-memory)** เท่านั้น — รีสตาร์ท server แล้วข้อมูลหาย
