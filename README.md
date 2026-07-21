@@ -1,9 +1,46 @@
-# ระบบการตรวจจับ และประมาณระดับความรุนแรงของน้ำท่วม และคำนวณเส้นทางอพยพด้วยวิธีการ optimization
+# 🌊 RescuOpt — ระบบตรวจจับน้ำท่วมด้วย AI และคำนวณเส้นทางอพยพ
 
 ระบบตรวจจับ **น้ำท่วม** ด้วย AI (YOLOv8) ร่วมกับระบบ **คำนวณเส้นทางอพยพที่ปลอดภัยที่สุด** ด้วยอัลกอริทึม
 Search / Optimization / Constraint Satisfaction แบบ real-time บนแผนที่
 
 จัดทำโดย: นนอ.อริญชย์ หุนตระนี และ นนอ.อภิรักษ์ สาจันทร์
+
+---
+
+## 🚀 เริ่มใช้งานเร็ว (Quick Start)
+
+ทำตาม 5 ขั้นตอนนี้ก็ใช้งานได้เลย (รันบน **Windows**, มี **Conda** ติดตั้งไว้แล้ว):
+
+```bash
+# 1) โคลนโปรเจกต์
+git clone https://github.com/apiraSJ/Flooding_DASHBOARD-.git
+cd Flooding_DASHBOARD-
+
+# 2) สร้าง environment และเปิดใช้งาน
+conda create -n geoai python=3.10 -y
+conda activate geoai
+
+# 3) ติดตั้งไลบรารีของ backend server
+pip install flask flask-cors
+
+# 4) ติดตั้งไลบรารีของแอปตรวจจับน้ำท่วม
+cd Flood-detection
+pip install -r requirements.txt
+cd ..
+
+# 5) รันระบบทั้งหมดในคลิกเดียว (ดับเบิลคลิกไฟล์นี้ใน File Explorer ก็ได้)
+start_rescuopt.bat
+```
+
+เท่านี้ก็จะมี 2 หน้าต่างเปิดขึ้นมาอัตโนมัติ: backend server (`Server.py`) และแอป Desktop (`main.py`)
+เปิดเบราว์เซอร์ไปที่ **http://localhost:5000/disaster_nav** เพื่อดูแดชบอร์ดแผนที่
+
+> ⚠️ **สำคัญ:** tkinter (GUI ของ `main.py`) เป็นส่วนหนึ่งของ Python เองอยู่แล้ว **ไม่ต้องติดตั้งผ่าน pip**
+> ถ้าเปิดแอปแล้วขึ้น error `ModuleNotFoundError: No module named 'tkinter'` (พบได้บน Linux) ให้ติดตั้งระดับระบบแทน
+> เช่น `sudo apt install python3-tk` — การรัน `pip install tk` จะไม่ช่วยอะไร เพราะแพ็กเกจ `tk` บน PyPI
+> เป็นคนละอย่างกับ tkinter
+
+ถ้าไม่ได้ใช้ Windows หรืออยากรันแบบ manual เพื่อ debug ดูขั้นตอนละเอียดในหัวข้อที่ 4 ด้านล่าง
 
 ---
 
@@ -18,29 +55,28 @@ Search / Optimization / Constraint Satisfaction แบบ real-time บนแผ
    (ตำแหน่งภัยพิบัติ, ผู้รอดชีวิต, จุดปลอดภัย) ไว้ในหน่วยความจำ และส่งต่อให้หน้าเว็บ dashboard
 3. **แดชบอร์ดแผนที่ (Web Dashboard)** — หน้าเว็บ (Leaflet.js) ที่แสดงตำแหน่งอันตราย ผู้รอดชีวิต
    และคำนวณ **เส้นทางอพยพที่ปลอดภัยที่สุด** แบบ real-time ในฝั่ง browser โดยใช้อัลกอริทึม AI/Search
-   ให้เลือกได้ 8 แบบ (ดูหัวข้อ 4)
+   ให้เลือกได้ 8 แบบ (ดูหัวข้อ 5)
 
 พูดง่าย ๆ คือ: กล้อง/วิดีโอตรวจจับน้ำท่วม → ส่งพิกัดและความรุนแรงไปที่ server → server ส่งต่อให้
 แผนที่บนเว็บ → แผนที่คำนวณเส้นทางหนีที่ปลอดภัยที่สุดให้ผู้ประสบภัย พร้อมแอนิเมชันการค้นหาเส้นทาง
 
 ---
 
-## 2. โครงสร้างไฟล์ และหน้าที่ของแต่ละไฟล์
+## 2. โครงสร้างไฟล์
 
 ```
-Flooding_DASHBOARD-
-/
-├── Server.py                         # Backend API (Flask) — ศูนย์กลางข้อมูล
-├── start_rescuopt.bat                # สคริปต์ลัดสำหรับรันทั้งระบบบน Windows
-├── geoai_train.code-workspace        # ไฟล์ VS Code workspace (ตั้งค่า conda env)
+Flooding_DASHBOARD-/
+├── Server.py                    # Backend API (Flask) — ศูนย์กลางข้อมูล
+├── start_rescuopt.bat            # สคริปต์ลัดสำหรับรันทั้งระบบบน Windows
+├── geoai_train.code-workspace     # ไฟล์ VS Code workspace (ตั้งค่า conda env)
 ├── dashboard/
-│   └── disaster_nav.html             # หน้าเว็บแผนที่ + อัลกอริทึมหาเส้นทาง (client-side)
-└── Flood-detection/
-    ├── main.py                       # แอป Desktop (Tkinter GUI) — จุดเริ่มต้นใช้งานของผู้ใช้
-    ├── yolo.py                       # โมดูลประมวลผลวิดีโอด้วย YOLO (วัดระดับน้ำแบบต่อเนื่อง)
-    ├── best.pt                       # ไฟล์น้ำหนักโมเดล YOLOv8 (segmentation) ที่เทรนไว้แล้ว
-    ├── requirements.txt              # รายการไลบรารีที่ต้องติดตั้ง
-    └── media/                        # ภาพ/วิดีโอตัวอย่างสำหรับทดสอบและภาพประกอบ
+│   └── disaster_nav.html         # หน้าเว็บแผนที่ + อัลกอริทึมหาเส้นทาง (client-side)
+└── Flood-detection/               # ⚠️ ชื่อโฟลเดอร์มีขีดกลาง (-) ไม่ใช่ขีดล่าง (_)
+    ├── main.py                    # แอป Desktop (Tkinter GUI) — จุดเริ่มต้นใช้งานของผู้ใช้
+    ├── yolo.py                    # โมดูลประมวลผลวิดีโอด้วย YOLO (วัดระดับน้ำแบบต่อเนื่อง)
+    ├── best.pt                    # ไฟล์น้ำหนักโมเดล YOLOv8 (segmentation) ที่เทรนไว้แล้ว
+    ├── requirements.txt           # รายการไลบรารีที่ต้องติดตั้ง
+    └── media/                     # ภาพ/วิดีโอตัวอย่างสำหรับทดสอบและภาพประกอบ
 ```
 
 ### `Server.py` — Flask Backend
@@ -51,17 +87,18 @@ Flooding_DASHBOARD-
 - แปลงพิกัด GPS (lat/lng) ↔ ระยะทางเมตร (สำหรับให้อัลกอริทึมฝั่งเว็บคำนวณบนกริดเมตรได้ง่าย)
 - คำนวณ **จุดอพยพที่ปลอดภัย (safe exit point)** อัตโนมัติ โดยขยับออกจากจุดอันตรายที่ใกล้ที่สุด
   จนกว่าจะพ้นระยะปลอดภัยของอันตรายทุกจุด
-- **Endpoints หลัก:**
 
-  | Endpoint | Method | หน้าที่ |
-  |---|---|---|
-  | `/` , `/disaster_nav` | GET | เปิดหน้าเว็บ dashboard |
-  | `/dashboard/<file>` | GET | เสิร์ฟไฟล์ static ของ dashboard |
-  | `/api/hazards` | GET | ดึงสถานะปัจจุบันทั้งหมด (hazards, survivor, exit) |
-  | `/api/report_flood` | POST | รับรายงานน้ำท่วม 1 จุดจากกล้อง/วิดีโอ (ใช้โดย `yolo.py`) |
-  | `/api/report_flood_v2` | POST | รับรายงานแบบหลายจุด/หลาย survivor พร้อมกัน (ใช้โดย `main.py`) |
-  | `/api/remove_hazard` | POST | ลบจุดอันตรายที่ระบุ |
-  | `/api/clear` | POST | ล้างสถานะทั้งหมด |
+**Endpoints หลัก:**
+
+| Endpoint | Method | หน้าที่ |
+|---|---|---|
+| `/` , `/disaster_nav` | GET | เปิดหน้าเว็บ dashboard |
+| `/dashboard/<file>` | GET | เสิร์ฟไฟล์ static ของ dashboard |
+| `/api/hazards` | GET | ดึงสถานะปัจจุบันทั้งหมด (hazards, survivor, exit) |
+| `/api/report_flood` | POST | รับรายงานน้ำท่วม 1 จุดจากกล้อง/วิดีโอ (ใช้โดย `yolo.py`) |
+| `/api/report_flood_v2` | POST | รับรายงานแบบหลายจุด/หลาย survivor พร้อมกัน (ใช้โดย `main.py`) |
+| `/api/remove_hazard` | POST | ลบจุดอันตรายที่ระบุ |
+| `/api/clear` | POST | ล้างสถานะทั้งหมด |
 
 ### `dashboard/disaster_nav.html` — หน้าแผนที่ (Frontend)
 - ใช้ **Leaflet.js** วาดแผนที่ แสดงตำแหน่งอันตราย (วงกลมสีตามประเภท/ความรุนแรง), ผู้รอดชีวิต,
@@ -78,7 +115,6 @@ Flooding_DASHBOARD-
 - เมื่อกด "เริ่มวิเคราะห์" จะโหลดโมเดล YOLOv8 (`best.pt`) มาตรวจจับพื้นที่น้ำท่วมในภาพ/เฟรมแรกของวิดีโอ
 - คำนวณ % พื้นที่น้ำท่วมเทียบกับพื้นที่ภาพทั้งหมด (union ของ bounding box ด้วย `shapely`) แล้ว
   จัดระดับความรุนแรง: **<50% = เบา, 50–80% = ปานกลาง, >80% = รุนแรง** พร้อมคำแนะนำการเอาตัวรอด
-  (รวมเบอร์โทรฉุกเฉิน 1784 / 199)
 - ส่งผลลัพธ์ (ตำแหน่งผู้รอดชีวิต + จุดอันตราย) ไปที่ `Server.py` ผ่าน `POST /api/report_flood_v2`
   แล้วเปิดเบราว์เซอร์ไปที่หน้า dashboard ให้อัตโนมัติ
 
@@ -91,70 +127,47 @@ Flooding_DASHBOARD-
   150 เฟรม (ป้องกันไม่ให้ยิง request ถี่เกินไป)
 - ฟังก์ชันหลักที่เรียกใช้คือ `yolo(video_path, ...)` — ไม่มี GUI ในตัวเอง เหมาะสำหรับต่อกับกล้อง/สคริปต์อื่น
 
-### `Flood-detection/best.pt`
-- ไฟล์น้ำหนักโมเดล **YOLOv8 (segmentation)** ที่เทรนมาแล้วสำหรับตรวจจับพื้นที่น้ำท่วมโดยเฉพาะ
-  ถูกโหลดใช้งานทั้งใน `main.py` และ `yolo.py`
+---
 
-### `Flood-detection/requirements.txt`
-- รายการไลบรารี Python ที่จำเป็นสำหรับส่วน Flood Detection (ดูวิธีติดตั้งในหัวข้อถัดไป)
+## 3. ข้อกำหนดเบื้องต้น
 
-### `Flood-detection/media/`
-- ภาพและวิดีโอตัวอย่าง (เช่น `Fixed Hikuwai.mp4`, ภาพหน้าจอ GUI, ภาพผลลัพธ์) ใช้สำหรับสาธิต/ทดสอบระบบ
-
-### `start_rescuopt.bat`
-- สคริปต์ Windows ที่เปิด `Server.py` และ `Flood-detection/main.py` พร้อมกันในคนละหน้าต่าง cmd
-  (path Python ใน bat นี้ผูกกับเครื่องของผู้พัฒนา ต้องแก้ path ให้ตรงกับเครื่องตัวเองก่อนใช้ — ดูหัวข้อ 3)
-
-### `geoai_train.code-workspace`
-- ไฟล์ตั้งค่า VS Code workspace ให้ใช้ conda เป็นตัวจัดการ environment/package โดยอัตโนมัติเวลาเปิดโปรเจกต์
+- Python 3.9–3.10 แนะนำให้ใช้ผ่าน **Conda** (มีการอ้างอิง environment ชื่อ `geoai`)
+- ระบบปฏิบัติการ: Windows (ทดสอบ/ออกแบบมาสำหรับ Windows โดยเฉพาะ จาก `start_rescuopt.bat`)
+  — ใช้ macOS/Linux ได้ถ้ารันคำสั่งเองแบบ manual (ดูหัวข้อ 4)
+- GPU ไม่จำเป็น (โมเดลถูกตั้งค่าให้รันบน CPU เป็นค่าเริ่มต้น `model.to("cpu")`)
+- tkinter ต้องมีอยู่แล้วในตัว Python (มากับ python.org บน Windows/macOS โดยอัตโนมัติ, บน Linux
+  อาจต้องติดตั้งเพิ่มด้วย `sudo apt install python3-tk`)
 
 ---
 
-## 3. วิธีติดตั้งและรันโปรแกรม (ละเอียด)
+## 4. วิธีติดตั้งและรันแบบละเอียด (Manual, แนะนำสำหรับ debug)
 
-### 3.1 ข้อกำหนดเบื้องต้น
-- Python 3.9–3.10 แนะนำให้ใช้ผ่าน **Conda** (มีการอ้างอิง environment ชื่อ `geoai`)
-- ระบบปฏิบัติการ: Windows (ทดสอบ/ออกแบบมาสำหรับ Windows โดยเฉพาะ จาก `start_rescuopt.bat`)
-  — ใช้ macOS/Linux ได้ถ้าปรับ path เอง
-- GPU ไม่จำเป็น (โมเดลถูกตั้งค่าให้รันบน CPU เป็นค่าเริ่มต้น `model.to("cpu")`)
-
-### 3.2 สร้าง environment และติดตั้งไลบรารี
+### 4.1 โคลนโปรเจกต์และสร้าง environment
 
 ```bash
-# สร้างและเปิดใช้งาน conda environment
+git clone https://github.com/apiraSJ/Flooding_DASHBOARD-.git
+cd Flooding_DASHBOARD-
+
 conda create -n geoai python=3.10 -y
 conda activate geoai
-
-# ติดตั้งไลบรารีของ backend server
-pip install flask flask-cors
-
-# ติดตั้งไลบรารีของแอป Flood Detection (อัปเดตแล้ว ครบทุกไลบรารีในไฟล์เดียว)
-cd Flood-detection
-pip install -r requirements.txt
 ```
 
-> **หมายเหตุ:** `requirements.txt` ถูกแก้ไขให้ครบแล้ว — เดิมขาด `torch`, `opencv-python`, `pillow`,
-> `numpy`, `requests` ซึ่งเป็น dependency ที่ `main.py` และ `yolo.py` import ใช้จริง ตอนนี้รัน
-> `pip install -r requirements.txt` ครั้งเดียวก็ติดตั้งครบ ไม่ต้องสั่งเพิ่มแยกอีกแล้ว
+### 4.2 ติดตั้งไลบรารี
 
-### 3.3 วิธีรันแบบเร็ว (Windows, One-click)
+```bash
+# backend server
+pip install flask flask-cors
 
-`start_rescuopt.bat` ถูกแก้ไขให้ **ไม่ผูก path เครื่องผู้พัฒนาอีกต่อไป** — ใช้ `conda activate` และ
-`%~dp0` (ตำแหน่งไฟล์ .bat เอง) แทนการ hardcode path ของ `python.exe` จึงพกไปรันเครื่องไหนก็ได้ทันที
-โดยไม่ต้องแก้ไขไฟล์ ขอแค่มีเงื่อนไขต่อไปนี้:
+# แอป Flood Detection (ครบทุกไลบรารีในไฟล์เดียว)
+cd Flood-detection
+pip install -r requirements.txt
+cd ..
+```
 
-- ติดตั้ง Conda ไว้แล้ว และรันจาก **Anaconda Prompt** หรือ cmd ที่ตั้งค่า conda ไว้แล้ว
-  (ถ้า `conda activate` ใช้ไม่ได้ใน cmd ปกติ ให้รัน `conda init cmd.exe` ครั้งเดียวก่อน แล้วเปิด cmd ใหม่)
-- สร้าง environment ชื่อ `geoai` ไว้แล้วตามขั้นตอน 3.2 (ถ้า environment ของคุณชื่ออื่น ให้แก้ค่า
-  `set ENV_NAME=geoai` ที่บรรทัดต้นไฟล์ `start_rescuopt.bat` เป็นชื่อ environment ของคุณ)
+> `requirements.txt` ล็อกเวอร์ชัน `torch>=2.4,<2.5` ไว้เพราะโค้ดเรียกใช้ `torch.serialization.add_safe_globals()`
+> ซึ่งมีเฉพาะใน PyTorch ตั้งแต่เวอร์ชัน 2.4 เป็นต้นไป ถ้าใช้ torch เวอร์ชันต่ำกว่านี้จะโหลดโมเดลไม่ได้ (AttributeError)
 
-วิธีใช้: ดับเบิลคลิก `start_rescuopt.bat` — จะเปิด 2 หน้าต่าง cmd ให้อัตโนมัติ:
-- หน้าต่างแรก: activate environment แล้วรัน `Server.py` (backend + dashboard)
-- หน้าต่างสอง: activate environment แล้วรัน `Flood-detection/main.py` (แอป Desktop)
-
-### 3.4 วิธีรันแบบ Manual (แนะนำสำหรับตรวจสอบ/debug)
-
-**ขั้นตอนที่ 1 — เปิด Backend Server**
+### 4.3 เปิด Backend Server (terminal ที่ 1)
 
 ```bash
 conda activate geoai
@@ -162,9 +175,10 @@ python Server.py
 ```
 
 - เซิร์ฟเวอร์จะรันที่ `http://127.0.0.1:5000`
-- เปิดเบราว์เซอร์ไปที่ **`http://localhost:5000/disaster_nav`** เพื่อดูแดชบอร์ดแผนที่
+- เปิดเบราว์เซอร์ไปที่ **`http://localhost:5000/disaster_nav`** เพื่อดูแดชบอร์ดแผนที่ (ตอนนี้จะยังว่างเปล่า
+  จนกว่าจะมีข้อมูลจากขั้นตอนถัดไป)
 
-**ขั้นตอนที่ 2 — เปิดแอปตรวจจับน้ำท่วม (เปิด terminal ใหม่)**
+### 4.4 เปิดแอปตรวจจับน้ำท่วม (terminal ที่ 2 — เปิดใหม่)
 
 ```bash
 conda activate geoai
@@ -172,20 +186,33 @@ cd Flood-detection
 python main.py
 ```
 
-จะขึ้นหน้าต่าง GUI ให้:
+จะขึ้นหน้าต่าง GUI ให้ทำตามนี้:
 1. เลือกโหมด "ภาพนิ่ง" หรือ "วิดีโอ"
 2. กด "เปิดแผนที่เลือกตำแหน่ง" เพื่อวางจุด **ผู้รอดชีวิต** และ **จุดอันตราย** บนแผนที่ในตัวแอป
-3. อัปโหลดไฟล์ภาพ/วิดีโอที่ต้องการวิเคราะห์
+3. อัปโหลดไฟล์ภาพ/วิดีโอที่ต้องการวิเคราะห์ (ขั้นต่ำ **640×640 พิกเซล** — ไฟล์เล็กกว่านี้จะถูกปฏิเสธ)
 4. กดเริ่มวิเคราะห์ — โปรแกรมจะรันโมเดล YOLOv8 ประเมินความรุนแรง แล้วส่งผลไปที่ Server อัตโนมัติ
    พร้อมเปิดเบราว์เซอร์ไปที่หน้า dashboard ให้เห็นผลลัพธ์แบบ real-time
 
-**(ทางเลือก) ประมวลผลวิดีโอต่อเนื่องด้วย `yolo.py`**
+### 4.5 วิธีรันแบบเร็ว (Windows, One-click)
+
+ถ้าไม่อยากเปิด 2 terminal เอง ให้ใช้ `start_rescuopt.bat` แทน (ต้องมี Conda ติดตั้งไว้แล้วและมี
+environment ชื่อ `geoai` ตามขั้นตอน 4.1–4.2):
+
+- ดับเบิลคลิก `start_rescuopt.bat` (หรือรันจาก Anaconda Prompt / cmd ที่ตั้งค่า conda ไว้แล้ว)
+- จะเปิด 2 หน้าต่าง cmd ให้อัตโนมัติ: หน้าต่างแรกรัน `Server.py`, หน้าต่างสองรัน `Flood-detection/main.py`
+- ถ้า environment ของคุณชื่ออื่นไม่ใช่ `geoai` ให้แก้ค่า `set ENV_NAME=geoai` ที่บรรทัดต้นไฟล์ `.bat` เป็นชื่อของคุณ
+- ถ้า `conda activate` ใช้ไม่ได้ใน cmd ปกติ ให้รัน `conda init cmd.exe` ครั้งเดียวก่อน แล้วเปิด cmd ใหม่
+
+### 4.6 (ทางเลือก) ประมวลผลวิดีโอต่อเนื่องด้วย `yolo.py`
 
 ใช้เมื่อมีวิดีโอกล้องวงจรปิด/วิดีโอยาวที่ต้องการวัดระดับน้ำแบบต่อเนื่องทุกเฟรม แทนที่จะดูแค่เฟรมแรก
-เรียกใช้จากสคริปต์ Python ของตัวเอง เช่น:
+เรียกใช้จากสคริปต์ Python ของตัวเอง โดยรันจาก **ภายในโฟลเดอร์ `Flood-detection`** (หรือเพิ่ม path เข้า
+`sys.path` ก่อน import — ชื่อโฟลเดอร์มีขีดกลาง `-` จึง import แบบ `from Flood-detection.yolo import yolo`
+โดยตรงไม่ได้ เพราะ Python module name ห้ามมีขีดกลาง):
 
 ```python
-from Flood_detection.yolo import yolo   # ปรับ import ตามตำแหน่งไฟล์จริง
+# รันสคริปต์นี้จากภายในโฟลเดอร์ Flood-detection/
+from yolo import yolo
 
 yolo(
     video_path="media/Fixed Hikuwai.mp4",
@@ -204,7 +231,9 @@ yolo(
 (ตั้งค่า URL ปลายทางผ่าน environment variable `REPORT_URL` ได้ ค่าเริ่มต้นคือ
 `http://localhost:5000/api/report_flood`)
 
-### 3.5 ตั้งค่าเพิ่มเติมผ่าน Environment Variables
+---
+
+## 5. ตั้งค่าเพิ่มเติมผ่าน Environment Variables
 
 | ตัวแปร | ค่าเริ่มต้น | ใช้ที่ไฟล์ | หน้าที่ |
 |---|---|---|---|
@@ -215,7 +244,7 @@ yolo(
 
 ---
 
-## 4. อัลกอริทึมหาเส้นทางอพยพ (เลือกได้บนหน้าแดชบอร์ด)
+## 6. อัลกอริทึมหาเส้นทางอพยพ (เลือกได้บนหน้าแดชบอร์ด)
 
 | หมวด | อัลกอริทึม | แนวคิด |
 |---|---|---|
@@ -233,13 +262,27 @@ yolo(
 
 ---
 
-## 5. ข้อควรระวัง / ข้อจำกัดที่พบจากการอ่านโค้ด
+## 7. ปัญหาที่เจอบ่อย (Troubleshooting)
 
-- `start_rescuopt.bat` แก้ให้ใช้ `conda activate` + `%~dp0` แล้ว จึงไม่ผูกกับเครื่องผู้พัฒนาอีกต่อไป
-  (ยังคงต้องมี conda และ environment ชื่อ `geoai` อยู่ในเครื่องที่รันอยู่ดี) (`C:\Users\arin\...`) ต้องแก้ให้ตรงกับเครื่องของผู้ใช้เอง
-  — ส่วน `main.py`/`yolo.py` เวอร์ชันปัจจุบันใช้ path สัมพัทธ์แล้ว (`os.path.join(os.path.dirname(__file__), "best.pt")`)
-- รองรับเฉพาะภาพ/เฟรมที่มีความละเอียดขั้นต่ำ **640×640 พิกเซล** (ไฟล์เล็กกว่านี้จะถูกปฏิเสธ)
+| อาการ | สาเหตุที่เป็นไปได้ | วิธีแก้ |
+|---|---|---|
+| `ModuleNotFoundError: No module named 'tkinter'` | tkinter ไม่ได้มากับ Python ของระบบ (มักเจอบน Linux) | `sudo apt install python3-tk` แล้วรันใหม่ (ไม่ต้องพึ่ง `pip install tk`) |
+| โหลดโมเดล `best.pt` แล้ว error `AttributeError` เกี่ยวกับ `add_safe_globals` | ติดตั้ง torch เวอร์ชันต่ำกว่า 2.4 | ตรวจด้วย `python -c "import torch; print(torch.__version__)"` แล้วอัปเดตให้อยู่ในช่วง `torch>=2.4,<2.5` |
+| ข้อความ "Image/Video resolution is too low" | ไฟล์ที่อัปโหลดมีขนาดต่ำกว่า 640×640 พิกเซล | ใช้ไฟล์ความละเอียดสูงขึ้น |
+| กด "เริ่มวิเคราะห์" แล้วส่งข้อมูลไม่สำเร็จ (`ส่งข้อมูลไม่สำเร็จ: ...`) | ยังไม่ได้เปิด `Server.py` หรือเปิดคนละพอร์ต | เปิด `Server.py` ก่อนเสมอ (terminal ที่ 1) แล้วค่อยเปิด `main.py` |
+| แดชบอร์ดที่ `/disaster_nav` ว่างเปล่า | ยังไม่มีการส่งข้อมูล hazard/survivor เข้ามาเลย | ลองวิเคราะห์ภาพ/วิดีโอจาก `main.py` อย่างน้อย 1 ครั้งก่อน |
+| รีสตาร์ท `Server.py` แล้วข้อมูลบนแดชบอร์ดหายหมด | เป็นพฤติกรรมปกติ — ระบบเก็บสถานะไว้ใน **หน่วยความจำ (in-memory)** เท่านั้น ไม่มีฐานข้อมูล | วิเคราะห์ภาพ/วิดีโอส่งเข้าไปใหม่หลัง restart |
+
+---
+
+## 8. ข้อควรระวัง / ข้อจำกัด
+
 - `Server.py` เก็บข้อมูลทั้งหมดไว้ใน **หน่วยความจำ (in-memory)** เท่านั้น — รีสตาร์ท server แล้วข้อมูลหาย
   ไม่เหมาะกับการใช้งานจริงระยะยาวโดยไม่มีฐานข้อมูล
 - ควรรันในเครือข่ายที่เชื่อถือได้ (localhost/LAN) เท่านั้น เว้นแต่จะตั้งค่า `CORS_ORIGINS` และมาตรการ
   ความปลอดภัยอื่นเพิ่มเติมก่อนเปิดสู่อินเทอร์เน็ตสาธารณะ
+- `start_rescuopt.bat` ใช้ `conda activate` + `%~dp0` (ตำแหน่งไฟล์ .bat เอง) แทนการ hardcode path
+  จึงพกไปรันเครื่องไหนก็ได้ทันที แต่ยังคงต้องมี Conda และ environment ชื่อ `geoai` อยู่ในเครื่องที่รันอยู่ดี
+- รองรับเฉพาะภาพ/เฟรมที่มีความละเอียดขั้นต่ำ **640×640 พิกเซล** (ไฟล์เล็กกว่านี้จะถูกปฏิเสธ)
+- ชื่อโฟลเดอร์ `Flood-detection` มีขีดกลาง (`-`) ไม่ใช่ขีดล่าง (`_`) — ห้าม import ตรง ๆ แบบ
+  `import Flood-detection.yolo` เพราะ Python ไม่รองรับขีดกลางในชื่อ module (ดูวิธีแก้ในหัวข้อ 4.6)
