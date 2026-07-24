@@ -1,7 +1,9 @@
 #ตั้งค่าเวอร์ชั่น library ที่ต้องการใช้งาน เอาให้ตรงเวอร์นะครับ ถ้าไม่ตรงให้ uninstall แล้ว install ใหม่ครับ
 # Usage: pip install -r requirements.txt
 #me .txt มาให้ กดให้ copilot มันติดตั้งตาม auto ได้นะครับ
-tk==0.1.0
+# หมายเหตุ: ลบ tk==0.1.0 ออกแล้ว เพราะแพ็กเกจ "tk" บน PyPI คือ TensorKit (คนละตัวกับ Tkinter)
+# โค้ดใน main.py ใช้ `import tkinter as tk` ซึ่งเป็นโมดูลในตัวของ Python (built-in)
+# อยู่แล้ว ไม่ต้องติดตั้งอะไรเพิ่มสำหรับส่วนนี้
 ultralytics==8.0.116
 shapely==2.0.1
 tkintermapview
@@ -10,7 +12,9 @@ tkintermapview
 # หมายเหตุ: torch ต้อง >=2.4 เพราะโค้ดเรียกใช้ torch.serialization.add_safe_globals()
 # ซึ่งเป็นฟังก์ชันที่เพิ่งมีใน PyTorch ตั้งแต่เวอร์ชัน 2.4 เป็นต้นไป
 # (torch==2.0.1 เดิมไม่มีฟังก์ชันนี้ ทำให้เกิด AttributeError ตอนโหลดโมเดล)
-torch>=2.4,<2.5
+# ห้ามใช้ 2.4.0 พอดี: มีบั๊กที่ทำให้ inference บน Windows + CPU ผิดเพี้ยนแบบไม่มี error เตือน
+# (ดู ultralytics/ultralytics#15049) จึงกันเวอร์ชันนี้ไว้โดยเฉพาะ
+torch>=2.4,<2.5,!=2.4.0
 torchvision>=0.19,<0.20
 opencv-python==4.8.0.76
 pillow==10.0.0
