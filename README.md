@@ -55,21 +55,21 @@ conda activate geoai
 pip install flask flask-cors
 ```
 
-### ขั้นที่ 4: ติดตั้ง Dependency ของระบบตรวจจับ (YOLO)
+### ขั้นที่ 4: แก้ปัญหา setuptools/pkg_resources ล่วงหน้า (กันไว้ก่อน)
+
+Conda เวอร์ชันใหม่มักจะติดตั้ง `setuptools` เวอร์ชันที่ใหม่เกินไปมาให้ ซึ่งจะทำให้ YOLO ใช้งานไม่ได้ ให้ล็อกเวอร์ชันไว้ก่อนเลย **ก่อน**ติดตั้ง dependency ตัวอื่น (ไม่งั้นตอนขั้นถัดไป pip อาจ build `shapely` จากซอร์สแล้วดึง setuptools เวอร์ชันใหม่มาเองจนเจอ error `pkg_resources` ไปก่อนที่จะถึงขั้นแก้):
+
+```cmd
+pip install "setuptools==80.10.2"
+```
+
+### ขั้นที่ 5: ติดตั้ง Dependency ของระบบตรวจจับ (YOLO)
 
 ```cmd
 pip install -r Flood-detection\requirements.txt
 ```
 
 ⏳ ขั้นตอนนี้ใช้เวลานาน (5-15 นาทีขึ้นกับความเร็วเน็ต) เพราะต้องโหลด PyTorch ที่มีขนาดหลายร้อย MB **ห้ามปิดหน้าต่างจนกว่าจะขึ้น prompt กลับมาแบบไม่มีบรรทัดสีแดง**
-
-### ขั้นที่ 5: แก้ปัญหา setuptools/pkg_resources ล่วงหน้า (กันไว้ก่อน)
-
-Conda เวอร์ชันใหม่มักจะติดตั้ง `setuptools` เวอร์ชันที่ใหม่เกินไปมาให้ ซึ่งจะทำให้ YOLO ใช้งานไม่ได้ ให้ล็อกเวอร์ชันไว้ก่อนเลย:
-
-```cmd
-pip install "setuptools==80.10.2"
-```
 
 ### ขั้นที่ 6: รันโปรแกรม
 
